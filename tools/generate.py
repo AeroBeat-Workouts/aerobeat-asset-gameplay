@@ -10,11 +10,13 @@ import argparse, hashlib, json, math, shutil, struct, sys
 from pathlib import Path
 
 import bpy
+from bpy_extras.object_utils import world_to_camera_view
 from mathutils import Vector
 
-VERSION = "0.0.1"
+SUPPORTED_RELEASE = "0.0.2"
+VERSION = None
 BLENDER = "4.0.2"
-GENERATOR = "aerobeat-gameplay-generator-v1"
+GENERATOR = "aerobeat-gameplay-generator-v2"
 
 ASSETS = [
     dict(role="directional-arrow", variant="outline-v1", dimensions=[0.78,0.78,0.18], pivot=[0,0,0], budget=420, bound=[[-0.42,-0.42,-0.11],[0.42,0.42,0.11]], reuse="one mesh for Flow and Boxing; rotate only about local Z"),
@@ -27,7 +29,7 @@ ASSETS = [
 ]
 
 COLORS = {
-    "white": ((0.95,0.98,1.0,1),0.30,0.0,"OPAQUE"),
+    "white": ((0.95,0.98,1.0,1),0.30,0.45,"OPAQUE"),
     "charcoal": ((0.035,0.045,0.06,1),0.43,0.0,"OPAQUE"),
     "cyan": ((0.03,0.55,0.95,1),0.38,0.05,"OPAQUE"),
     "green": ((0.04,0.60,0.28,1),0.38,0.03,"OPAQUE"),
@@ -38,6 +40,7 @@ COLORS = {
     "blue_glass": ((0.12,0.68,0.92,0.20),0.16,0.15,"BLEND"),
     "cyan_edge": ((0.05,0.80,1.0,1),0.25,3.0,"OPAQUE"),
     "marker": ((0.98,0.98,1.0,1),0.34,0.1,"OPAQUE"),
+    "panel": ((0.10,0.14,0.20,1),0.45,0.18,"OPAQUE"),
 }
 
 def canonical(obj): return json.dumps(obj, sort_keys=True, separators=(",",":"), ensure_ascii=False)+"\n"
@@ -68,12 +71,59 @@ def material(name):
 def add_comp(verts,faces,mats, cv,cf,mi):
     o=len(verts); verts.extend(cv); faces.extend(tuple(o+i for i in f) for f in cf); mats.extend([mi]*len(cf))
 
+def polygon_area(poly): return sum(poly[i][0]*poly[(i+1)%len(poly)][1]-poly[(i+1)%len(poly)][0]*poly[i][1] for i in range(len(poly)))*.5
+
+def triangulate(poly):
+    """Deterministic ear clipping for a counter-clockwise simple loop."""
+    if polygon_area(poly)<=0: raise ValueError("triangulation requires counter-clockwise loop")
+    indices=list(range(len(poly))); result=[]
+    def cross(a,b,c): return (poly[b][0]-poly[a][0])*(poly[c][1]-poly[a][1])-(poly[b][1]-poly[a][1])*(poly[c][0]-poly[a][0])
+    def inside(p,a,b,c):
+        q=poly[p]; aa=poly[a]; bb=poly[b]; cc=poly[c]
+        signs=((bb[0]-aa[0])*(q[1]-aa[1])-(bb[1]-aa[1])*(q[0]-aa[0]),(cc[0]-bb[0])*(q[1]-bb[1])-(cc[1]-bb[1])*(q[0]-bb[0]),(aa[0]-cc[0])*(q[1]-cc[1])-(aa[1]-cc[1])*(q[0]-cc[0]))
+        return min(signs)>=-1e-10
+    while len(indices)>3:
+        for k,b in enumerate(indices):
+            a=indices[k-1]; c=indices[(k+1)%len(indices)]
+            if cross(a,b,c)>1e-10 and not any(inside(p,a,b,c) for p in indices if p not in (a,b,c)):
+                result.append((a,b,c)); indices.pop(k); break
+        else: raise ValueError("polygon cannot be triangulated")
+    result.append(tuple(indices)); return result
+
 def extrude(poly,z0,z1):
     n=len(poly); v=[(x,y,z0) for x,y in poly]+[(x,y,z1) for x,y in poly]; f=[]
-    # front (-Z) and rear caps; deterministic fans
-    for i in range(1,n-1): f.append((0,i+1,i)); f.append((n,n+i,n+i+1))
+    for a,b,c in triangulate(poly): f.append((a,c,b)); f.append((n+a,n+b,n+c))
     for i in range(n): j=(i+1)%n; f += [(i,j,n+j),(i,n+j,n+i)]
     return v,f
+
+def rear_and_sides(poly,z0,z1):
+    """Outer depth shell without a front cap; the front is explicit ring geometry."""
+    n=len(poly); v=[(x,y,z0) for x,y in poly]+[(x,y,z1) for x,y in poly]; f=[]
+    for a,b,c in triangulate(poly): f.append((n+a,n+b,n+c))
+    for i in range(n):
+        j=(i+1)%n; f += [(i,j,n+j),(i,n+j,n+i)]
+    return v,f
+
+def ring(outer,inner,z):
+    """Continuous front-facing annulus between corresponding silhouette loops."""
+    if len(outer)!=len(inner): raise ValueError("ring loops must correspond")
+    n=len(outer); v=[(x,y,z) for x,y in outer]+[(x,y,z) for x,y in inner]; f=[]
+    for i in range(n):
+        j=(i+1)%n; f += [(i,n+j,j),(i,n+i,n+j)]
+    return v,f
+
+def rimmed_plate(poly,z0,z1,separator_scale,inset_scale,inset_material):
+    """Explicit white perimeter, bounded charcoal separator, and colored inset."""
+    outer=list(poly)
+    if polygon_area(outer)<0: outer.reverse()
+    separator=[(x*separator_scale,y*separator_scale) for x,y in outer]
+    inset=[(x*inset_scale,y*inset_scale) for x,y in outer]
+    parts=[]
+    parts.append((*rear_and_sides(outer,z0,z1),"charcoal"))
+    parts.append((*ring(outer,separator,z0),"white"))
+    parts.append((*ring(separator,inset,z0),"charcoal"))
+    parts.append((*extrude(inset,z0,z1),inset_material))
+    return parts
 
 def box(x0,x1,y0,y1,z0,z1):
     v=[(x0,y0,z0),(x1,y0,z0),(x1,y1,z0),(x0,y1,z0),(x0,y0,z1),(x1,y0,z1),(x1,y1,z1),(x0,y1,z1)]
@@ -129,16 +179,17 @@ def build_geometry(role):
         return names.index(n)
     if role=="directional-arrow":
         p=[(-.16,-.39),(.16,-.39),(.16,.05),(.39,.05),(0,.39),(-.39,.05),(-.16,.05)]
-        for s,z0,z1,m in [(1,-.088,.088,"white"),(.91,-.090,-.085,"charcoal"),(.80,-.092,-.087,"cyan")]:
-            cv,cf=extrude([(x*s,y*s) for x,y in p],z0,z1); add_comp(v,f,mi,cv,cf,matn(m))
+        for cv,cf,m in rimmed_plate(p,-.09,.09,.88,.74,"cyan"):
+            add_comp(v,f,mi,cv,cf,matn(m))
     elif role=="any-note":
-        for r,z0,z1,m in [(.35,-.086,.086,"white"),(.315,-.090,-.085,"charcoal"),(.275,-.094,-.089,"cyan")]:
-            cv,cf=cylinder(r,z0,z1,24); add_comp(v,f,mi,cv,cf,matn(m))
+        p=[(.35*math.cos(2*math.pi*i/24),.35*math.sin(2*math.pi*i/24)) for i in range(24)]
+        for cv,cf,m in rimmed_plate(p,-.09,.09,.87,.73,"cyan"):
+            add_comp(v,f,mi,cv,cf,matn(m))
     elif role=="guard":
         p=[(-.36,.30),(-.25,.41),(.25,.41),(.36,.30),(.30,-.20),(0,-.41),(-.30,-.20)]
         # Geometry center is z=-0.07 because origin is the specified rear-grip pivot.
-        for s,z0,z1,m in [(1,-.144,.01,"white"),(.91,-.147,-.142,"charcoal"),(.79,-.15,-.145,"green")]:
-            cv,cf=extrude([(x*s,y*s) for x,y in p],z0,z1); add_comp(v,f,mi,cv,cf,matn(m))
+        for cv,cf,m in rimmed_plate(p,-.15,.01,.88,.73,"green"):
+            add_comp(v,f,mi,cv,cf,matn(m))
     elif role=="bomb":
         cv,cf=uv_sphere(.22); add_comp(v,f,mi,cv,cf,matn("black"))
         dirs=[(1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)]
@@ -239,6 +290,7 @@ def export_asset(root,spec):
 def camera_at(location,target,lens=52):
     bpy.ops.object.camera_add(location=location); c=bpy.context.object; c.name="review/camera"; c.data.lens=lens
     c.rotation_euler=(Vector(target)-c.location).to_track_quat("-Z","Y").to_euler(); bpy.context.scene.camera=c
+    return c
 
 def setup_render(world=(.025,.032,.05,1)):
     s=bpy.context.scene; s.render.engine="BLENDER_EEVEE"; s.render.resolution_x=1600; s.render.resolution_y=900; s.render.resolution_percentage=100
@@ -246,44 +298,107 @@ def setup_render(world=(.025,.032,.05,1)):
     s.render.image_settings.color_depth="8"; s.render.image_settings.compression=15
     if s.world is None: s.world=bpy.data.worlds.new("review/world")
     s.world.color=world[:3]; s.view_settings.look="AgX - Medium High Contrast"
-    bpy.ops.object.light_add(type="AREA",location=(4,6,-4)); bpy.context.object.data.energy=1300; bpy.context.object.data.shape="DISK"; bpy.context.object.data.size=5
-    bpy.ops.object.light_add(type="AREA",location=(-4,2,3)); bpy.context.object.data.energy=900; bpy.context.object.data.size=4
+    bpy.ops.object.light_add(type="AREA",location=(4,6,-4)); bpy.context.object.data.energy=1500; bpy.context.object.data.shape="DISK"; bpy.context.object.data.size=5
+    bpy.ops.object.light_add(type="AREA",location=(-4,2,3)); bpy.context.object.data.energy=950; bpy.context.object.data.size=4
 
 def render(path):
     path.parent.mkdir(parents=True,exist_ok=True); bpy.context.scene.render.filepath=str(path); bpy.ops.render.render(write_still=True)
 
-def add_review_asset(spec,loc=(0,0,0),scale=(1,1,1)):
-    o=make_asset(spec); o.location=loc; o.scale=scale; return o
+def add_review_asset(spec,loc=(0,0,0),scale=(1,1,1),rotation=(0,0,0),instance=None):
+    o=make_asset(spec); o.location=loc; o.scale=scale; o.rotation_euler=rotation
+    if instance: o.name="review/"+instance
+    return o
+
+def add_label(text,loc,size=.24,align="CENTER"):
+    bpy.ops.object.text_add(location=loc); o=bpy.context.object; o.name="review/label/"+text
+    o.data.body=text; o.data.align_x=align; o.data.align_y="CENTER"; o.data.size=size; o.data.extrude=.002; o.rotation_euler[1]=math.pi
+    o.data.materials.append(material("white")); return o
+
+def add_panel(cx,cy,w,h,z=.35):
+    cv,cf=box(cx-w/2,cx+w/2,cy-h/2,cy+h/2,z,z+.015)
+    mesh=bpy.data.meshes.new("review/panel/mesh"); mesh.from_pydata(cv,[],cf); mesh.materials.append(material("panel")); mesh.update()
+    o=bpy.data.objects.new("review/panel",mesh); bpy.context.collection.objects.link(o); return o
+
+def world_corners(obj):
+    bpy.context.view_layer.update()
+    return [obj.matrix_world @ Vector(c) for c in obj.bound_box]
+
+def projected_bbox(camera,obj):
+    points=[world_to_camera_view(bpy.context.scene,camera,p) for p in world_corners(obj)]
+    return [round(min(p.x for p in points),6),round(min(p.y for p in points),6),round(max(p.x for p in points),6),round(max(p.y for p in points),6)]
+
+def fit_camera(objects,direction=(.55,.35,-1),margin=.08,lens=55,orthographic=False):
+    points=[p for o in objects for p in world_corners(o)]
+    lo=Vector(tuple(min(p[i] for p in points) for i in range(3))); hi=Vector(tuple(max(p[i] for p in points) for i in range(3))); center=(lo+hi)*.5
+    radius=max((p-center).length for p in points); direction=Vector(direction).normalized()
+    c=camera_at(center+direction*max(2.0,radius*2.2),center,lens)
+    if orthographic: c.data.type="ORTHO"; c.data.ortho_scale=max(2.0,(hi.y-lo.y)*1.25)
+    for _ in range(160):
+        boxes=[projected_bbox(c,o) for o in objects]
+        if all(b[0]>=margin and b[1]>=margin and b[2]<=1-margin and b[3]<=1-margin for b in boxes): return c,boxes
+        if orthographic: c.data.ortho_scale*=1.04
+        else: c.location=center+(c.location-center)*1.04
+    raise RuntimeError("calculated review camera could not contain all object bounds")
+
+def layout_entry(camera,role,variant,obj,instance):
+    return {"role":role,"variant":variant,"instance":instance,"projected_bbox":projected_bbox(camera,obj)}
 
 def review(root):
-    rd=root/"review"/VERSION; images=[]
-    # Neutral overview board.
-    reset(); setup_render();
-    placements={"directional-arrow":(-2.4,.7,0),"any-note":(-1.2,.7,0),"guard":(0,.7,0),"bomb":(1.3,.7,0),"wall":(2.6,.65,.35),"athlete-marker":(-.65,-.55,0)}
+    rd=root/"review"/VERSION; images=[]; layouts={}
+    # Intentional labeled 4x2 neutral inspection grid; every asset is fully in frame.
+    reset(); setup_render(); assets=[]; panels=[]; labels=[]
+    cells=[(-4.5,1.6),(-1.5,1.6),(1.5,1.6),(4.5,1.6),(-3,-1.65),(0,-1.65),(3,-1.65)]
+    roles={s["role"]:s for s in ASSETS}; scales={"directional-arrow":1.35,"any-note":1.35,"guard":1.25,"bomb":1.35,"wall":.58,"track":.42,"athlete-marker":3.2}
+    rotations={"wall":(math.radians(18),math.radians(-22),0),"track":(math.radians(62),0,0)}
+    for s,(x,y) in zip(ASSETS,cells):
+        panels.append(add_panel(x,y,2.72,2.72)); sc=scales[s["role"]]
+        o=add_review_asset(s,(x,y+.18,0),(sc,sc,.08 if s["role"]=="track" else sc),rotations.get(s["role"],(0,0,0)),s["role"]+"/neutral")
+        assets.append((s,o,s["role"]+"/neutral")); labels.append(add_label(s["role"]+" / "+s["variant"],(x,y-1.02,-.22),.19))
+    labels.append(add_label("AEROBEAT 0.0.2 - SEVEN CANONICAL ASSETS",(0,3.35,-.22),.32))
+    labels.append(add_label("FRONT = -Z   |   +Y UP   |   WHITE RIM / CHARCOAL SEPARATOR / ROLE INSET",(0,-3.25,-.22),.20))
+    camera,boxes=fit_camera([x[1] for x in assets]+panels+labels,direction=(0,0,-1),margin=.035,lens=52,orthographic=True)
+    p=rd/"neutral-board.png"; render(p); images.append(p)
+    layouts[p.name]={"kind":"neutral-grid","minimum_margin":.035,"objects":[layout_entry(camera,s["role"],s["variant"],o,n) for s,o,n in assets]}
+    # Perspective gameplay context: required roles, exactly two shields, and three distinct marker spheres.
+    reset(); setup_render((.06,.11,.16,1)); context=[]
+    def ctx(role,loc,scale=(1,1,1),instance=None):
+        s=roles[role]; name=instance or role; o=add_review_asset(s,loc,scale,instance=name); context.append((s,o,name)); return o
+    ctx("track",(0,-1.15,4.5),(.9,.9,.50),"track/context")
+    ctx("directional-arrow",(-1.65,.45,-.1),(1.5,1.5,1.5),"directional-arrow/context")
+    ctx("any-note",(1.25,.15,.9),(1.5,1.5,1.5),"any-note/context")
+    ctx("guard",(-1.05,.15,2.4),(1.5,1.5,1.5),"guard/left-identical")
+    ctx("guard",(1.05,.15,2.4),(1.5,1.5,1.5),"guard/right-identical")
+    ctx("bomb",(0,.15,4.2),(1.2,1.2,1.2),"bomb/context")
+    ctx("wall",(1.35,.0,6.7),(1,1,3.2),"wall/scaled-full-interval")
+    ctx("athlete-marker",(0,.65,-1.5),(2,2,2),"athlete-marker/nose")
+    ctx("athlete-marker",(-.72,.08,-1.5),(2,2,2),"athlete-marker/left-wrist")
+    ctx("athlete-marker",(.72,.08,-1.5),(2,2,2),"athlete-marker/right-wrist")
+    camera,_=fit_camera([x[1] for x in context],direction=(.46,.42,-1),margin=.10,lens=52)
+    # Review-only built-in Blender text overlay; never exported or stored in a source snapshot.
+    cam_q=camera.rotation_euler.copy(); forward=cam_q.to_quaternion() @ Vector((0,0,-1)); right=cam_q.to_quaternion() @ Vector((1,0,0)); up=cam_q.to_quaternion() @ Vector((0,1,0))
+    overlay_center=camera.location+forward*1.25
+    text="GAMEPLAY CONTEXT - COMPLETE FRAME\nARROW | CIRCLE | 2x IDENTICAL SHIELD | BOMB | SCALED WALL | TRACK\nMARKERS: NOSE | LEFT WRIST | RIGHT WRIST"
+    t=add_label(text,overlay_center+up*.20,.013); t.data.space_line=1.15; t.rotation_euler=cam_q; t.location-=right*.0
+    p=rd/"gameplay-context.png"; render(p); images.append(p)
+    layouts[p.name]={"kind":"gameplay-context","minimum_margin":.10,"required_counts":{"directional-arrow":1,"any-note":1,"guard":2,"bomb":1,"wall":1,"track":1,"athlete-marker":3},"objects":[layout_entry(camera,s["role"],s["variant"],o,n) for s,o,n in context]}
+    # Calculated, safe-margin individual three-quarter views.
     for s in ASSETS:
-        if s["role"]=="track": add_review_asset(s,(0,-1.1,2.3),(.85,.85,.32))
-        else: add_review_asset(s,placements[s["role"]])
-    camera_at((.2,2.4,-7.3),(0,.1,0)); p=rd/"neutral-board.png"; render(p); images.append(p)
-    # Gameplay context with canonical shield duplicated, long wall and three marker instances.
-    reset(); setup_render((.06,.11,.16,1)); track=add_review_asset(next(x for x in ASSETS if x["role"]=="track"),(0,-1.15,5.5),(.9,.9,.55))
-    ar=next(x for x in ASSETS if x["role"]=="directional-arrow"); ci=next(x for x in ASSETS if x["role"]=="any-note"); sh=next(x for x in ASSETS if x["role"]=="guard"); bo=next(x for x in ASSETS if x["role"]=="bomb"); wa=next(x for x in ASSETS if x["role"]=="wall"); mk=next(x for x in ASSETS if x["role"]=="athlete-marker")
-    add_review_asset(ar,(-1.25,.15,-1.2)); add_review_asset(ci,(1.25,.15,.2)); add_review_asset(sh,(-1.05,.15,1.8)); add_review_asset(sh,(1.05,.15,1.8)); add_review_asset(bo,(0,.15,4.0)); add_review_asset(wa,(1.5,.0,6.0),(1,1,3.2))
-    add_review_asset(mk,(0,.5,-2)); add_review_asset(mk,(-.65,.1,-2)); add_review_asset(mk,(.65,.1,-2))
-    camera_at((5.4,5.0,-8.5),(0,-.2,3.0),48); p=rd/"gameplay-context.png"; render(p); images.append(p)
-    # Individual three-quarter views.
-    for s in ASSETS:
-        reset(); setup_render(); o=add_review_asset(s)
-        dims=s["dimensions"]; distance=max(dims)*2.2+1.2
-        camera_at((distance*.55,distance*.35,-distance),(0,0,0),58)
+        reset(); setup_render(); o=add_review_asset(s,rotation=(0,math.radians(58),0) if s["role"]=="track" else (0,0,0),instance=s["role"]+"/individual")
+        direction=(.30,1,-.38) if s["role"]=="track" else ((.42,.32,-1) if s["role"] in ("wall","bomb","athlete-marker") else (.24,.16,-1))
+        camera,_=fit_camera([o],direction=direction,margin=.12,lens=58)
         p=rd/(s["role"]+"--"+s["variant"]+".png"); render(p); images.append(p)
-    write_json(rd/"hashes.v1.json",{"schema":"aerobeat.review-hashes/v1","release":VERSION,"resolution":[1600,900],"renderer":"Blender 4.0.2 EEVEE","files":[{"path":p.name,"sha256":sha(p)} for p in sorted(images)]})
+        layouts[p.name]={"kind":"individual","minimum_margin":.12,"objects":[layout_entry(camera,s["role"],s["variant"],o,s["role"]+"/individual")]}
+    write_json(rd/"layout.v1.json",{"schema":"aerobeat.review-layout/v1","release":VERSION,"resolution":[1600,900],"images":layouts})
+    write_json(rd/"hashes.v1.json",{"schema":"aerobeat.review-hashes/v1","release":VERSION,"resolution":[1600,900],"renderer":"Blender 4.0.2 EEVEE","files":[{"path":p.name,"bytes":p.stat().st_size,"sha256":sha(p)} for p in sorted(images)],"layout":{"path":"layout.v1.json","bytes":(rd/"layout.v1.json").stat().st_size,"sha256":sha(rd/"layout.v1.json")}})
 
 def glb_json(path):
     b=path.read_bytes(); magic,ver,total=struct.unpack_from("<4sII",b,0); assert magic==b"glTF" and ver==2 and total==len(b)
     n,t=struct.unpack_from("<I4s",b,12); assert t==b"JSON"; return json.loads(b[20:20+n].decode("utf-8").rstrip(" \x00"))
 
 def main():
-    ap=argparse.ArgumentParser(); ap.add_argument("--output-root",required=True); ap.add_argument("--skip-review",action="store_true"); a=ap.parse_args(sys.argv[sys.argv.index("--")+1:] if "--" in sys.argv else [])
+    global VERSION
+    ap=argparse.ArgumentParser(); ap.add_argument("--output-root",required=True); ap.add_argument("--release",required=True,choices=[SUPPORTED_RELEASE]); ap.add_argument("--skip-review",action="store_true"); a=ap.parse_args(sys.argv[sys.argv.index("--")+1:] if "--" in sys.argv else [])
+    VERSION=a.release
     root=Path(a.output_root).absolute(); rel=root/"release"/"raw"/VERSION
     if rel.exists(): shutil.rmtree(rel)
     records=[]
@@ -312,7 +427,7 @@ def main():
         if p.is_file(): payload.append({"path":p.relative_to(rel).as_posix(),"bytes":p.stat().st_size,"sha256":sha(p)})
     inv={"schema":"aerobeat.release-inventory/v1","release":VERSION,"immutable":True,"expected_asset_count":7,"payload":payload}
     write_json(rel/"inventory.v1.json",inv)
-    proof={"schema":"aerobeat.release-proof/v1","release":VERSION,"inventory_sha256":sha(rel/"inventory.v1.json"),"generator":GENERATOR,"blender":BLENDER,"determinism":{"scope":"every file under release/raw/0.0.1","method":"primary plus two clean temporary byte comparisons","blend_snapshots_in_scope":False},"blend_snapshot_limitation":"Blender .blend container bytes are not claimed deterministic; tracked editable snapshots are subordinate to tools/generate.py.","claims":{"separate_glbs":True,"combined_glb":False,"analytic_materials_only":True,"textures":0,"external_dependencies":0,"canonical_shields":1,"guard_instances_required":2}}
+    proof={"schema":"aerobeat.release-proof/v1","release":VERSION,"inventory_sha256":sha(rel/"inventory.v1.json"),"generator":GENERATOR,"blender":BLENDER,"determinism":{"scope":"every file under release/raw/%s"%VERSION,"method":"primary plus two clean temporary byte comparisons","blend_snapshots_in_scope":False},"blend_snapshot_limitation":"Blender .blend container bytes are not claimed deterministic; tracked editable snapshots are subordinate to tools/generate.py.","claims":{"separate_glbs":True,"combined_glb":False,"analytic_materials_only":True,"textures":0,"external_dependencies":0,"canonical_shields":1,"guard_instances_required":2}}
     write_json(rel/"proof.v1.json",proof)
     if not a.skip_review: review(root)
     print("GENERATED",len(records),"assets at",root)

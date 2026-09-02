@@ -18,13 +18,13 @@ This repository owns only canonical, engine-neutral AeroBeat gameplay art: edita
 Generate and validate from the repository root:
 
 ```bash
-blender --background --factory-startup --python tools/generate.py -- --output-root .
-python3 tools/validate.py --root . --release 0.0.1
-python3 tools/reproducibility.py --root .
-python3 tools/validate.py --root . --release 0.0.1 --finalize
+blender --background --factory-startup --python tools/generate.py -- --output-root . --release 0.0.2
+python3 tools/validate.py --root . --release 0.0.2
+python3 tools/reproducibility.py --root . --release 0.0.2
+python3 tools/validate.py --root . --release 0.0.2 --finalize
 ```
 
-Generation intentionally replaces generated source, manifest, release, and review outputs for version `0.0.1`. Never regenerate a finalized release to make a correction: create a new release version instead. Review PNGs belong under `review/`, never under `release/`.
+Generation requires an explicit supported successor release and currently replaces generated source, root manifests/set, `release/raw/0.0.2`, and `review/0.0.2`. Finalized `release/raw/0.0.1` and `review/0.0.1` are immutable and must never be regenerated, deleted, or rewritten. Review PNGs belong under `review/`, never under `release/`.
 
 ## Release rule
 

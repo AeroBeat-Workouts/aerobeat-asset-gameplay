@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse, ast, hashlib, json, os, shutil, struct, subprocess, sys, tempfile
 from pathlib import Path
 
-VERSION="0.0.1"
+SUPPORTED_RELEASE="0.0.2"
 EXPECTED={
 "directional-arrow":("outline-v1",[.78,.78,.18],[0,0,0],420),
 "any-note":("circle-v1",[.70,.70,.18],[0,0,0],320),
@@ -72,7 +72,7 @@ def glb_facts(path,canonical):
 
 def validate(root,release,smoke=True):
  rel=root/"release"/"raw"/release
- if release!=VERSION: fail(f"unsupported release {release}")
+ if release!=SUPPORTED_RELEASE: fail(f"unsupported release {release}; successor tooling requires explicit {SUPPORTED_RELEASE}")
  expected_paths={"inventory.v1.json","proof.v1.json","sets/default-v1.json"}
  manifests=[]
  for role,(variant,dims,pivot,budget) in EXPECTED.items():
@@ -120,14 +120,30 @@ def validate(root,release,smoke=True):
   if e!={"path":p,"bytes":q.stat().st_size,"sha256":sha(q)}: fail(f"inventory hash/size {p}")
  proof=load(rel/"proof.v1.json")
  if proof["inventory_sha256"]!=sha(rel/"inventory.v1.json") or proof["claims"].get("combined_glb") is not False or proof["determinism"]["blend_snapshots_in_scope"] is not False: fail("release proof")
- rh=load(root/"review"/release/"hashes.v1.json")
- review_files={p.name for p in (root/"review"/release).glob("*.png")}
- if len(review_files)!=9 or {x["path"] for x in rh["files"]}!=review_files or rh["resolution"]!=[1600,900]: fail("review inventory/resolution")
+ review_dir=root/"review"/release; rh=load(review_dir/"hashes.v1.json"); layout=load(review_dir/"layout.v1.json")
+ review_files={p.name for p in review_dir.glob("*.png")}
+ expected_reviews={"neutral-board.png","gameplay-context.png"}|{r+"--"+v[0]+".png" for r,v in EXPECTED.items()}
+ if review_files!=expected_reviews or {x["path"] for x in rh["files"]}!=review_files or rh["resolution"]!=[1600,900]: fail("review inventory/resolution")
+ if rh.get("layout")!={"path":"layout.v1.json","bytes":(review_dir/"layout.v1.json").stat().st_size,"sha256":sha(review_dir/"layout.v1.json")}: fail("review layout hash/size")
  for e in rh["files"]:
-  p=root/"review"/release/e["path"]; data=p.read_bytes()
-  if sha(p)!=e["sha256"] or data[:8]!=b"\x89PNG\r\n\x1a\n" or struct.unpack(">IIBB",data[16:26])!=(1600,900,8,2): fail(f"review RGB/hash {e['path']}")
+  p=review_dir/e["path"]; data=p.read_bytes()
+  if e.get("bytes")!=p.stat().st_size or sha(p)!=e["sha256"] or data[:8]!=b"\x89PNG\r\n\x1a\n" or struct.unpack(">IIBB",data[16:26])!=(1600,900,8,2): fail(f"review RGB/hash {e['path']}")
+ if layout.get("schema")!="aerobeat.review-layout/v1" or layout.get("release")!=release or layout.get("resolution")!=[1600,900] or set(layout.get("images",{}))!=expected_reviews: fail("review layout schema/images")
+ for image,entry in layout["images"].items():
+  margin=entry.get("minimum_margin"); objects=entry.get("objects",[])
+  if not isinstance(margin,(int,float)) or margin<.03 or not objects: fail(f"{image}: missing containment evidence")
+  for obj in objects:
+   b=obj.get("projected_bbox",[])
+   if len(b)!=4 or b[0]<margin-1e-5 or b[1]<margin-1e-5 or b[2]>1-margin+1e-5 or b[3]>1-margin+1e-5: fail(f"{image}: projected object outside safe frame {obj}")
+ neutral=layout["images"]["neutral-board.png"]["objects"]
+ if len(neutral)!=7 or {x["role"] for x in neutral}!=set(EXPECTED): fail("neutral board must contain all seven roles once")
+ context=layout["images"]["gameplay-context.png"]; counts={r:sum(x["role"]==r for x in context["objects"]) for r in EXPECTED}
+ required={"directional-arrow":1,"any-note":1,"guard":2,"bomb":1,"wall":1,"track":1,"athlete-marker":3}
+ if context.get("required_counts")!=required or counts!=required: fail(f"gameplay context counts {counts}")
+ marker_instances={x["instance"] for x in context["objects"] if x["role"]=="athlete-marker"}
+ if marker_instances!={"athlete-marker/nose","athlete-marker/left-wrist","athlete-marker/right-wrist"}: fail("gameplay marker identities")
  # Tool/source policy: no third-party imports, network calls, asset loading, textures, fonts, or engine metadata.
- allowed={"argparse","ast","hashlib","json","math","os","pathlib","shutil","struct","subprocess","sys","tempfile","bpy","mathutils","__future__"}
+ allowed={"argparse","ast","hashlib","json","math","os","pathlib","shutil","struct","subprocess","sys","tempfile","bpy","bpy_extras","mathutils","__future__"}
  for p in sorted((root/"tools").glob("*.py")):
   tree=ast.parse(p.read_text(encoding="utf-8"),filename=str(p))
   imports=set()
@@ -151,7 +167,7 @@ def validate(root,release,smoke=True):
  return manifests
 
 def main():
- ap=argparse.ArgumentParser(); ap.add_argument("--root",default="."); ap.add_argument("--release",default=VERSION); ap.add_argument("--no-smoke",action="store_true"); ap.add_argument("--finalize",action="store_true")
+ ap=argparse.ArgumentParser(); ap.add_argument("--root",default="."); ap.add_argument("--release",required=True,choices=[SUPPORTED_RELEASE]); ap.add_argument("--no-smoke",action="store_true"); ap.add_argument("--finalize",action="store_true")
  a=ap.parse_args(); root=Path(a.root).resolve(); facts=validate(root,a.release,not a.no_smoke)
  if a.finalize:
   rel=root/"release"/"raw"/a.release
