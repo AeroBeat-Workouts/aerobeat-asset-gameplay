@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+.blender/
+*.blend1
+*.blend2
+*.tmp

@@ -1,0 +1,1 @@
+{"constraints":{"guard_canonical_asset":"guard/shield-v1","guard_instances_per_beat":2},"name":"default-v1","release":"0.0.1","roles":{"any-note":"circle-v1","athlete-marker":"sphere-v1","bomb":"urchin-v1","directional-arrow":"outline-v1","guard":"shield-v1","track":"blue-glass-v1","wall":"red-glass-v1"},"schema":"aerobeat.gameplay-set/v1"}
