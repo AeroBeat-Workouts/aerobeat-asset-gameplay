@@ -5,6 +5,8 @@ import argparse, ast, hashlib, json, os, shutil, struct, subprocess, sys, tempfi
 from pathlib import Path
 
 SUPPORTED_RELEASE="0.0.2"
+EXPECTED_LICENSE_SHA256="41003d4a74749c0220e33dd415042164b5a1093ed401f36277234f772d22d3d0"
+EXPECTED_LICENSE_BYTES=19347
 EXPECTED={
 "directional-arrow":("outline-v1",[.78,.78,.18],[0,0,0],420),
 "any-note":("circle-v1",[.70,.70,.18],[0,0,0],320),
@@ -73,6 +75,12 @@ def glb_facts(path,canonical):
 def validate(root,release,smoke=True):
  rel=root/"release"/"raw"/release
  if release!=SUPPORTED_RELEASE: fail(f"unsupported release {release}; successor tooling requires explicit {SUPPORTED_RELEASE}")
+ license_path=root/"LICENSE.md"
+ if not license_path.is_file(): fail(f"missing {license_path}")
+ license_bytes=license_path.stat().st_size
+ license_sha256=sha(license_path)
+ if license_bytes!=EXPECTED_LICENSE_BYTES or license_sha256!=EXPECTED_LICENSE_SHA256:
+  fail(f"{license_path}: license integrity mismatch bytes={license_bytes} sha256={license_sha256}; expected bytes={EXPECTED_LICENSE_BYTES} sha256={EXPECTED_LICENSE_SHA256}")
  expected_paths={"inventory.v1.json","proof.v1.json","sets/default-v1.json"}
  manifests=[]
  for role,(variant,dims,pivot,budget) in EXPECTED.items():

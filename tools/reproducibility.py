@@ -28,6 +28,7 @@ def main():
     link.symlink_to(dest,target_is_directory=True)
     run([blender,"--background","--factory-startup","--python",str(root/"tools/generate.py"),"--","--output-root",str(link),"--release",a.release])
     link.unlink()
+    shutil.copyfile(root/"LICENSE.md",dest/"LICENSE.md")
     run([sys.executable,str(root/"tools/validate.py"),"--root",str(dest),"--release",a.release,"--no-smoke"])
   finally:
    if link.is_symlink(): link.unlink()
