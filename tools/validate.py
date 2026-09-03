@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Strict release/source validator for the canonical AeroBeat gameplay package."""
 from __future__ import annotations
-import argparse, ast, hashlib, json, os, shutil, struct, subprocess, sys, tempfile
+import argparse, ast, hashlib, json, os, shutil, struct, sys
 from pathlib import Path
+
+from subprocess_contract import run_checked
 
 SUPPORTED_RELEASE="0.0.3"
 PREDECESSOR_RELEASE="0.0.2"
@@ -223,7 +225,7 @@ def validate(root,release,smoke=True):
  hashes=visibility.get("glb_sha256",{})
  if hashes.get(PREDECESSOR_RELEASE)!={"directional-arrow":sha(root/"release"/"raw"/PREDECESSOR_RELEASE/"directional-arrow/outline-v1.glb"),"track":sha(root/"release"/"raw"/PREDECESSOR_RELEASE/"track/blue-glass-v1.glb")} or hashes.get(release)!={"directional-arrow":sha(rel/"directional-arrow/outline-v1.glb"),"track":sha(rel/"track/blue-glass-v1.glb")}: fail("visibility review GLB hashes")
  # Tool/source policy: no third-party imports, network calls, asset loading, textures, fonts, or engine metadata.
- allowed={"argparse","ast","hashlib","json","math","os","pathlib","shutil","struct","subprocess","sys","tempfile","bpy","bpy_extras","mathutils","__future__"}
+ allowed={"argparse","ast","hashlib","json","math","os","pathlib","shutil","struct","subprocess","subprocess_contract","sys","tempfile","bpy","bpy_extras","mathutils","__future__"}
  for p in sorted((root/"tools").glob("*.py")):
   tree=ast.parse(p.read_text(encoding="utf-8"),filename=str(p))
   imports=set()
@@ -238,12 +240,22 @@ def validate(root,release,smoke=True):
  if smoke:
   blender=shutil.which("blender")
   if not blender: fail("Blender missing for smoke imports")
-  sv=subprocess.run([blender,"--version"],capture_output=True,text=True,check=True).stdout.splitlines()[0]
-  if sv!="Blender 4.0.2": fail(f"exact Blender required, got {sv}")
-  smoke_script=root/"tools"/"smoke_import.py"
+  try:
+   run_checked([blender,"--version"],operation="Blender version",marker="Blender 4.0.2")
+  except RuntimeError as exc: fail(str(exc))
+  glb_script=root/"tools"/"smoke_import.py"; source_script=root/"tools"/"smoke_source.py"
   for role,variant,glb,_,_ in manifests:
-   cp=subprocess.run([blender,"--background","--factory-startup","--python",str(smoke_script),"--",str(glb),f"{role}/{variant}"],capture_output=True,text=True)
-   if cp.returncode: fail(f"clean Blender smoke import failed {glb}:\n{cp.stdout}\n{cp.stderr}")
+   canonical=f"{role}/{variant}"; blend=root/"source"/role/variant/(variant+".blend")
+   for kind,path,script in (("source",blend,source_script),("glb",glb,glb_script)):
+    before=sha(path)
+    try:
+     run_checked(
+      [blender,"--background","--factory-startup","--python",str(script),"--",str(path),canonical],
+      operation=f"clean Blender {kind} smoke {canonical}",
+      marker=f"SMOKE_OK kind={kind} identity={canonical}",
+      postcondition=lambda path=path,before=before: path.is_file() and sha(path)==before,
+     )
+    except RuntimeError as exc: fail(str(exc))
  return manifests
 
 def main():
@@ -256,5 +268,6 @@ def main():
  print("VALID",len(facts),"assets")
  for role,variant,_,tris,aabb in facts: print(f"  {role}/{variant}: {tris} triangles AABB={aabb}")
  print("VALID release inventory, SHA-256, rights, provenance, tools, dependencies, review hashes, and clean Blender imports")
+ print(f"VALIDATE_OK release={a.release} assets=7 release_files=17 smoke={0 if a.no_smoke else 1}")
 
 if __name__=="__main__": main()

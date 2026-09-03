@@ -504,7 +504,7 @@ def material_manifest(role,names):
 
 def main():
     global VERSION
-    ap=argparse.ArgumentParser(); ap.add_argument("--output-root",required=True); ap.add_argument("--release",required=True,choices=[SUPPORTED_RELEASE]); ap.add_argument("--skip-review",action="store_true"); a=ap.parse_args(sys.argv[sys.argv.index("--")+1:] if "--" in sys.argv else [])
+    ap=argparse.ArgumentParser(); ap.add_argument("--output-root",required=True); ap.add_argument("--release",required=True,choices=[SUPPORTED_RELEASE]); a=ap.parse_args(sys.argv[sys.argv.index("--")+1:] if "--" in sys.argv else [])
     VERSION=a.release
     root=Path(a.output_root).absolute(); rel=root/"release"/"raw"/VERSION
     if rel.exists(): raise SystemExit(f"immutable release target already exists: {rel}")
@@ -536,7 +536,26 @@ def main():
     write_json(rel/"inventory.v1.json",inv)
     proof={"schema":"aerobeat.release-proof/v1","release":VERSION,"inventory_sha256":sha(rel/"inventory.v1.json"),"generator":GENERATOR,"blender":BLENDER,"determinism":{"scope":"every file under release/raw/%s"%VERSION,"method":"primary plus two clean temporary byte comparisons","blend_snapshots_in_scope":False},"blend_snapshot_limitation":"Blender .blend container bytes are not claimed deterministic; tracked editable snapshots are subordinate to tools/generate.py.","claims":{"separate_glbs":True,"combined_glb":False,"analytic_materials_only":True,"textures":0,"external_dependencies":0,"canonical_shields":1,"guard_instances_required":2,"directional_arrow":{"opacity":1.0,"alpha_mode":"OPAQUE","depth_write":True,"runtime_tint_targets":["red","yellow","green"]},"track":{"opacity":0.52,"predecessor_opacity":0.20,"opacity_multiplier":2.6,"alpha_mode":"BLEND","depth_write":False,"order":"after-grid-before-wall"}}}
     write_json(rel/"proof.v1.json",proof)
-    if not a.skip_review: review(root)
-    print("GENERATED",len(records),"assets at",root)
+    review(root)
+    expected_release={"inventory.v1.json","proof.v1.json","sets/default-v1.json"}
+    expected_sources=set(); expected_manifests=set()
+    for s in ASSETS:
+        role=s["role"]; variant=s["variant"]
+        expected_release|={f"{role}/{variant}.glb",f"manifests/{role}/{variant}.v1.json"}
+        expected_sources.add(f"{role}/{variant}/{variant}.blend")
+        expected_manifests.add(f"{role}/{variant}.v1.json")
+    actual_release={p.relative_to(rel).as_posix() for p in rel.rglob("*") if p.is_file()}
+    actual_sources={p.relative_to(root/"source").as_posix() for p in (root/"source").rglob("*") if p.is_file()}
+    actual_manifests={p.relative_to(root/"manifests").as_posix() for p in (root/"manifests").rglob("*") if p.is_file()}
+    review_dir=root/"review"/VERSION
+    actual_review_pngs={p.name for p in review_dir.glob("*.png")}
+    expected_review_pngs={"neutral-board.png","gameplay-context.png","visibility-comparison.png"}|{s["role"]+"--"+s["variant"]+".png" for s in ASSETS}
+    actual_review_metadata={p.name for p in review_dir.glob("*.json")}
+    if actual_release!=expected_release: raise RuntimeError(f"generation release postcondition mismatch: {sorted(actual_release)}")
+    if actual_sources!=expected_sources: raise RuntimeError(f"generation source postcondition mismatch: {sorted(actual_sources)}")
+    if actual_manifests!=expected_manifests: raise RuntimeError(f"generation manifest postcondition mismatch: {sorted(actual_manifests)}")
+    if actual_review_pngs!=expected_review_pngs or actual_review_metadata!={"hashes.v1.json","layout.v1.json","visibility.v1.json"}: raise RuntimeError("generation review postcondition mismatch")
+    if {p.name for p in (root/"sets").glob("*.json")}!={"default-v1.json"}: raise RuntimeError("generation set postcondition mismatch")
+    print("GENERATE_OK release=0.0.3 assets=7 sources=7 manifests=7 release_files=17 review_pngs=10 review_metadata=3")
 
 if __name__=="__main__": main()

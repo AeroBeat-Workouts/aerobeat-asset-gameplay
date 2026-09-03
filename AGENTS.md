@@ -21,10 +21,11 @@ Generate and validate from the repository root:
 blender --background --factory-startup --python tools/generate.py -- --output-root . --release 0.0.3
 python3 tools/validate.py --root . --release 0.0.3
 python3 tools/reproducibility.py --root . --release 0.0.3
+python3 tools/test_subprocess_contract.py --root .
 python3 tools/validate.py --root . --release 0.0.3 --finalize
 ```
 
-Generation requires the explicit supported successor `0.0.3`, preserves unchanged source snapshots, and fails closed if its release target already exists. Finalized `release/raw/0.0.1`, `review/0.0.1`, `release/raw/0.0.2`, and `review/0.0.2` are immutable and must never be regenerated, deleted, or rewritten. Review PNGs belong under `review/`, never under `release/`.
+Generation requires the explicit supported successor `0.0.3`, preserves unchanged source snapshots, and fails closed if its release target already exists. Blender may print an uncaught Python traceback and still exit zero, so all Blender-backed subprocesses must use `tools/subprocess_contract.py`: combined output, rc 0, no fatal signature, one exact operation/identity marker, and explicit postconditions. Finalized `release/raw/0.0.1`, `review/0.0.1`, `release/raw/0.0.2`, and `review/0.0.2` are immutable and must never be regenerated, deleted, or rewritten. Review PNGs belong under `review/`, never under `release/`.
 
 ## Release rule
 

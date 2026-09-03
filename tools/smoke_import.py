@@ -27,4 +27,4 @@ mesh=bpy.data.meshes.new(canonical+"/smoke-mesh"); mesh.from_pydata(positions,[]
 obj=bpy.data.objects.new(canonical,mesh); bpy.context.collection.objects.link(obj)
 if len(mesh.polygons)!=len(faces) or not faces: raise RuntimeError("mesh import validation failed")
 if any(abs(x)>1e-7 for x in obj.location) or any(abs(x)>1e-7 for x in obj.rotation_euler) or any(abs(x-1)>1e-7 for x in obj.scale): raise RuntimeError("non-identity transform")
-print("SMOKE_OK",canonical,len(mesh.polygons))
+print(f"SMOKE_OK kind=glb identity={canonical}")
