@@ -6,7 +6,7 @@ from pathlib import Path
 
 # Blender .blend snapshots and rendered PNGs are intentionally outside the byte-
 # deterministic contract. The complete immutable raw release is authoritative.
-SUPPORTED_RELEASE="0.0.2"
+SUPPORTED_RELEASE="0.0.3"
 def digest(p): return hashlib.sha256(p.read_bytes()).hexdigest()
 def inventory(root,release):
  base=root/"release"/"raw"/release
@@ -25,6 +25,10 @@ def main():
   builds=[Path(ad),Path(bd)]; link=Path(tempfile.gettempdir())/f"aerobeat-gameplay-repro-{os.getpid()}"
   try:
    for dest in builds:
+    for relative in ("release/raw/0.0.1","release/raw/0.0.2","review/0.0.1","review/0.0.2"):
+     shutil.copytree(root/relative,dest/relative)
+    for relative in ("any-note/circle-v1/circle-v1.blend","athlete-marker/sphere-v1/sphere-v1.blend","bomb/urchin-v1/urchin-v1.blend","guard/shield-v1/shield-v1.blend","wall/red-glass-v1/red-glass-v1.blend"):
+     target=dest/"source"/relative; target.parent.mkdir(parents=True,exist_ok=True); shutil.copyfile(root/"source"/relative,target)
     link.symlink_to(dest,target_is_directory=True)
     run([blender,"--background","--factory-startup","--python",str(root/"tools/generate.py"),"--","--output-root",str(link),"--release",a.release])
     link.unlink()

@@ -4,9 +4,27 @@ from __future__ import annotations
 import argparse, ast, hashlib, json, os, shutil, struct, subprocess, sys, tempfile
 from pathlib import Path
 
-SUPPORTED_RELEASE="0.0.2"
+SUPPORTED_RELEASE="0.0.3"
+PREDECESSOR_RELEASE="0.0.2"
 EXPECTED_LICENSE_SHA256="41003d4a74749c0220e33dd415042164b5a1093ed401f36277234f772d22d3d0"
 EXPECTED_LICENSE_BYTES=19347
+PREDECESSOR_TREES={
+ "release/raw/0.0.1":(17,"8d94f98a99cdf20b9b588c1d0f2173dd854b7c35c28f5f3b94a715f5392fc77e"),
+ "review/0.0.1":(10,"1fed80f58288f85c2cd93c212994b1a3eb10631097260f79f4d06a0df5ee0a7e"),
+ "release/raw/0.0.2":(17,"76cc77cab3f2ed1869cc759c096b89531b4da70b941689d00323869ca7045dec"),
+ "review/0.0.2":(11,"2ac3a84590af70569eb3fd64f3c2387878eb27f74df4effcd337f6b3e0e85528"),
+}
+UNCHANGED_SOURCE_SHA256={
+ "any-note/circle-v1/circle-v1.blend":"d4326da274913b454d8af9888c71295235bfd81c2c891fbbc980bea34f54365e",
+ "athlete-marker/sphere-v1/sphere-v1.blend":"cab8b4099540654cd1895ef65ba88e57c62aa40ab0908f4bfbcc5a19535a15c4",
+ "bomb/urchin-v1/urchin-v1.blend":"ff251ad67d6c95b4ffd1fc6fed65fb74cd94696b1dff32438b4c2b5138e4ebe9",
+ "guard/shield-v1/shield-v1.blend":"f3254883e8b68802792b538bf5ffe27a9eae65fb9b18dc39eebd6f8f5863978b",
+ "wall/red-glass-v1/red-glass-v1.blend":"8d77e2cbd9efa6813b792d30f1428584dc93febccbe89791d40f89b9859e2547",
+}
+PREDECESSOR_CHANGED_SOURCE_SHA256={
+ "directional-arrow/outline-v1/outline-v1.blend":"6b1c4d8b8f501d2960f382b4ae7f908c353c7b015610505126e41cbb86ac4344",
+ "track/blue-glass-v1/blue-glass-v1.blend":"da6330cf19bb537ac94f847397eb97c89bf4b50a1cb8b79c95cd3ebab6e80503",
+}
 EXPECTED={
 "directional-arrow":("outline-v1",[.78,.78,.18],[0,0,0],420),
 "any-note":("circle-v1",[.70,.70,.18],[0,0,0],320),
@@ -25,6 +43,11 @@ def sha(p):
  with open(p,"rb") as f:
   for b in iter(lambda:f.read(1024*1024),b""): h.update(b)
  return h.hexdigest()
+def tree_digest(base):
+ rows=[]
+ for p in sorted(x for x in base.rglob("*") if x.is_file()):
+  rows.append(f"{p.relative_to(base).as_posix()}\0{p.stat().st_size}\0{sha(p)}\n")
+ return len(rows),hashlib.sha256("".join(rows).encode("utf-8")).hexdigest()
 def eq(a,b,e=1e-5): return len(a)==len(b) and all(abs(x-y)<=e for x,y in zip(a,b))
 def fail(msg): raise AssertionError(msg)
 def exact_keys(d,k,where):
@@ -81,6 +104,18 @@ def validate(root,release,smoke=True):
  license_sha256=sha(license_path)
  if license_bytes!=EXPECTED_LICENSE_BYTES or license_sha256!=EXPECTED_LICENSE_SHA256:
   fail(f"{license_path}: license integrity mismatch bytes={license_bytes} sha256={license_sha256}; expected bytes={EXPECTED_LICENSE_BYTES} sha256={EXPECTED_LICENSE_SHA256}")
+ for relative,expected in PREDECESSOR_TREES.items():
+  base=root/relative
+  if not base.is_dir(): fail(f"missing immutable predecessor tree {base}")
+  actual=tree_digest(base)
+  if actual!=expected: fail(f"predecessor immutability mismatch {relative}: {actual} != {expected}")
+ expected_source_paths={f"{r}/{v[0]}/{v[0]}.blend" for r,v in EXPECTED.items()}
+ actual_source_paths={p.relative_to(root/"source").as_posix() for p in (root/"source").rglob("*") if p.is_file()}
+ if actual_source_paths!=expected_source_paths: fail(f"source inventory mismatch missing={sorted(expected_source_paths-actual_source_paths)} extra={sorted(actual_source_paths-expected_source_paths)}")
+ for relative,expected_sha in UNCHANGED_SOURCE_SHA256.items():
+  if sha(root/"source"/relative)!=expected_sha: fail(f"unchanged source mutated: {relative}")
+ for relative,old_sha in PREDECESSOR_CHANGED_SOURCE_SHA256.items():
+  if sha(root/"source"/relative)==old_sha: fail(f"required successor source did not change: {relative}")
  expected_paths={"inventory.v1.json","proof.v1.json","sets/default-v1.json"}
  manifests=[]
  for role,(variant,dims,pivot,budget) in EXPECTED.items():
@@ -105,6 +140,24 @@ def validate(root,release,smoke=True):
   tris,aabb,d=glb_facts(glb,canonical)
   expected_names={"node":canonical,"mesh":canonical+"/mesh","materials":[x.get("name") for x in d.get("materials",[])]}
   if m["names"]!=expected_names or rm["names"]!=expected_names or m["materials"]["names"]!=expected_names["materials"]: fail(f"{role}: mesh/node/material names")
+  materials={x["name"]:x for x in d.get("materials",[])}
+  if role=="directional-arrow":
+   expected_contract={"opacity":1.0,"alpha_mode":"OPAQUE","blend":"opaque","double_sided":False,"cull":"back","depth_test":True,"depth_write":True,"white_outline_material":"mat/white","runtime_tint_material":"mat/tint_base","runtime_tint_targets":["red","yellow","green"]}
+   if m["materials"].get("contract")!=expected_contract or rm["materials"].get("contract")!=expected_contract: fail("directional-arrow: opaque/tint contract")
+   if set(materials)!={"mat/charcoal","mat/white","mat/tint_base"}: fail("directional-arrow: exact material inventory")
+   for name,mat in materials.items():
+    if mat.get("alphaMode")!="OPAQUE" or mat.get("doubleSided") is not False or mat["pbrMetallicRoughness"]["baseColorFactor"][3]!=1: fail(f"directional-arrow: nonopaque material {name}")
+    extras=mat.get("extras",{}).get("aerobeat",{})
+    if extras.get("blend")!="opaque" or extras.get("cull")!="back" or extras.get("depthTest") is not True or extras.get("depthWrite") is not True: fail(f"directional-arrow: depth/blend/cull semantics {name}")
+   if materials["mat/tint_base"].get("extras",{}).get("aerobeat",{}).get("runtimeTintable") is not True: fail("directional-arrow: core not runtime tintable")
+   if materials["mat/white"].get("extras",{}).get("aerobeat",{}).get("runtimeTintable") is not False: fail("directional-arrow: white outline must not be runtime tinted")
+  elif role=="track":
+   expected_contract={"opacity":0.52,"predecessor_opacity":0.20,"opacity_multiplier":2.6,"alpha_mode":"BLEND","blend":"alpha","double_sided":False,"cull":"back","depth_test":True,"depth_write":False,"order":"after-grid-before-wall","justification":"0.52 is 2.6x stronger than 0.20 and remains translucent blue glass over bright ice."}
+   if m["materials"].get("contract")!=expected_contract or rm["materials"].get("contract")!=expected_contract: fail("track: visibility/depth/order contract")
+   glass=materials.get("mat/blue_glass",{}); factor=glass.get("pbrMetallicRoughness",{}).get("baseColorFactor",[])
+   if factor!=[0.1,0.58,0.92,0.52] or glass.get("alphaMode")!="BLEND" or glass.get("doubleSided") is not False: fail("track: expected stronger blue glass alpha 0.52")
+   extras=glass.get("extras",{}).get("aerobeat",{})
+   if extras!={"blend":"alpha","cull":"back","depthTest":True,"depthWrite":False,"order":"after-grid-before-wall"}: fail("track: depth/order semantics")
   if tris!=m["geometry"]["triangle_count"] or tris>budget: fail(f"{role}: triangles {tris}/{budget}")
   flat=lambda x:[z for row in x for z in row]
   if not eq(flat(aabb),flat(m["geometry"]["measured_aabb"])): fail(f"{role}: GLB/manifest AABB")
@@ -114,6 +167,10 @@ def validate(root,release,smoke=True):
   if any(aabb[0][i]<shifted[0][i]-1e-5 or aabb[1][i]>shifted[1][i]+1e-5 for i in range(3)): fail(f"{role}: bound exceeded {aabb} vs {shifted}")
   measured=[aabb[1][i]-aabb[0][i] for i in range(3)]
   if not eq(measured,dims,2e-4): fail(f"{role}: exact dimensions {measured} != {dims}")
+  predecessor_glb=root/"release"/"raw"/PREDECESSOR_RELEASE/role/(variant+".glb")
+  if role in ("directional-arrow","track"):
+   if sha(glb)==sha(predecessor_glb): fail(f"{role}: required material successor GLB is unchanged")
+  elif glb.read_bytes()!=predecessor_glb.read_bytes(): fail(f"{role}: geometry/material GLB changed outside approved scope")
   manifests.append((role,variant,glb,tris,aabb))
  actual={p.relative_to(rel).as_posix() for p in rel.rglob("*") if p.is_file()}
  if actual!=expected_paths: fail(f"release inventory mismatch missing={sorted(expected_paths-actual)} extra={sorted(actual-expected_paths)}")
@@ -130,9 +187,10 @@ def validate(root,release,smoke=True):
  if proof["inventory_sha256"]!=sha(rel/"inventory.v1.json") or proof["claims"].get("combined_glb") is not False or proof["determinism"]["blend_snapshots_in_scope"] is not False: fail("release proof")
  review_dir=root/"review"/release; rh=load(review_dir/"hashes.v1.json"); layout=load(review_dir/"layout.v1.json")
  review_files={p.name for p in review_dir.glob("*.png")}
- expected_reviews={"neutral-board.png","gameplay-context.png"}|{r+"--"+v[0]+".png" for r,v in EXPECTED.items()}
+ expected_reviews={"neutral-board.png","gameplay-context.png","visibility-comparison.png"}|{r+"--"+v[0]+".png" for r,v in EXPECTED.items()}
  if review_files!=expected_reviews or {x["path"] for x in rh["files"]}!=review_files or rh["resolution"]!=[1600,900]: fail("review inventory/resolution")
  if rh.get("layout")!={"path":"layout.v1.json","bytes":(review_dir/"layout.v1.json").stat().st_size,"sha256":sha(review_dir/"layout.v1.json")}: fail("review layout hash/size")
+ if rh.get("visibility")!={"path":"visibility.v1.json","bytes":(review_dir/"visibility.v1.json").stat().st_size,"sha256":sha(review_dir/"visibility.v1.json")}: fail("review visibility hash/size")
  for e in rh["files"]:
   p=review_dir/e["path"]; data=p.read_bytes()
   if e.get("bytes")!=p.stat().st_size or sha(p)!=e["sha256"] or data[:8]!=b"\x89PNG\r\n\x1a\n" or struct.unpack(">IIBB",data[16:26])!=(1600,900,8,2): fail(f"review RGB/hash {e['path']}")
@@ -150,6 +208,20 @@ def validate(root,release,smoke=True):
  if context.get("required_counts")!=required or counts!=required: fail(f"gameplay context counts {counts}")
  marker_instances={x["instance"] for x in context["objects"] if x["role"]=="athlete-marker"}
  if marker_instances!={"athlete-marker/nose","athlete-marker/left-wrist","athlete-marker/right-wrist"}: fail("gameplay marker identities")
+ visibility=load(review_dir/"visibility.v1.json"); comparison=layout["images"]["visibility-comparison.png"]
+ if visibility.get("schema")!="aerobeat.visibility-review/v1" or visibility.get("release")!=release or visibility.get("predecessor")!=PREDECESSOR_RELEASE: fail("visibility review schema/releases")
+ if visibility.get("backgrounds")!=["DARK ICE","BRIGHT ICE","BLUE ICE"] or comparison.get("backgrounds")!=visibility["backgrounds"]: fail("visibility review backgrounds")
+ if visibility.get("counts_per_release")!={"directional-arrow":3,"track":3} or comparison.get("counts_per_release")!=visibility["counts_per_release"]: fail("visibility review counts")
+ objects=comparison["objects"]
+ for version in (PREDECESSOR_RELEASE,release):
+  if sum(x.get("release")==version and x["role"]=="directional-arrow" for x in objects)!=3 or sum(x.get("release")==version and x["role"]=="track" for x in objects)!=3: fail(f"visibility board counts for {version}")
+ geometry=visibility.get("geometry",{})
+ if geometry!={"directional-arrow":{"dimensions":[.78,.78,.18],"triangles":71},"track":{"dimensions":[4.2,.06,24.0],"triangles":60}}: fail("visibility review geometry labels")
+ successor=visibility.get("materials",{}).get(release,{})
+ if successor.get("directional-arrow",{}).get("alpha")!=1.0 or successor.get("directional-arrow",{}).get("runtime_tint_targets")!=["red","yellow","green"]: fail("visibility review arrow material values")
+ if successor.get("track",{}).get("alpha")!=.52 or successor.get("track",{}).get("opacity_multiplier")!=2.6 or successor.get("track",{}).get("order")!="after-grid-before-wall": fail("visibility review track material values")
+ hashes=visibility.get("glb_sha256",{})
+ if hashes.get(PREDECESSOR_RELEASE)!={"directional-arrow":sha(root/"release"/"raw"/PREDECESSOR_RELEASE/"directional-arrow/outline-v1.glb"),"track":sha(root/"release"/"raw"/PREDECESSOR_RELEASE/"track/blue-glass-v1.glb")} or hashes.get(release)!={"directional-arrow":sha(rel/"directional-arrow/outline-v1.glb"),"track":sha(rel/"track/blue-glass-v1.glb")}: fail("visibility review GLB hashes")
  # Tool/source policy: no third-party imports, network calls, asset loading, textures, fonts, or engine metadata.
  allowed={"argparse","ast","hashlib","json","math","os","pathlib","shutil","struct","subprocess","sys","tempfile","bpy","bpy_extras","mathutils","__future__"}
  for p in sorted((root/"tools").glob("*.py")):
