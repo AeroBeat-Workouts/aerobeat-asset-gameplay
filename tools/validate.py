@@ -6,8 +6,8 @@ from pathlib import Path
 
 from subprocess_contract import run_checked
 
-SUPPORTED_RELEASE="0.0.6"
-PREDECESSOR_RELEASE="0.0.5"
+SUPPORTED_RELEASE="0.0.7"
+PREDECESSOR_RELEASE="0.0.6"
 EXPECTED_LICENSE_SHA256="41003d4a74749c0220e33dd415042164b5a1093ed401f36277234f772d22d3d0"
 EXPECTED_LICENSE_BYTES=19347
 PREDECESSOR_TREES={
@@ -21,6 +21,8 @@ PREDECESSOR_TREES={
  "review/0.0.4":(16,"db87aac1135729d14cfbb7f3c37824f4cd04f9df604ea9fe73987912a6f08ae7"),
  "release/raw/0.0.5":(17,"24f6bb3b86657716ed03958a32dee5c9db3904aa980cb0a839aacac0590cc860"),
  "review/0.0.5":(18,"04cac552f675060223abc9fa003caed27b9d7ddcbc254cc5125654bb773653a7"),
+ "release/raw/0.0.6":(17,"d46ef42fdb0b2b743acbc0fabf87e7ae8a24bb5f7a8af729b43d09bba09306e3"),
+ "review/0.0.6":(28,"8b15e960cd964bae223e02804253b801d508710a7e1c3f0d9ab3c22352184c0a"),
 }
 UNCHANGED_SOURCE_SHA256={
  "any-note/circle-v1/circle-v1.blend":"d4326da274913b454d8af9888c71295235bfd81c2c891fbbc980bea34f54365e",
@@ -31,7 +33,7 @@ UNCHANGED_SOURCE_SHA256={
  "wall/red-glass-v1/red-glass-v1.blend":"d7977bd1871bf2ebf0094885252ffdaf524196f060aacde5d15a0b96bde50d96",
 }
 PREDECESSOR_CHANGED_SOURCE_SHA256={
- "athlete-marker/sphere-v1/sphere-v1.blend":"cab8b4099540654cd1895ef65ba88e57c62aa40ab0908f4bfbcc5a19535a15c4",
+ "athlete-marker/sphere-v1/sphere-v1.blend":"46c7a2be1ba489d622fb4196e1c46c060d9ce60cf18c7656e2ca95f2017e2c1f",
 }
 UNCHANGED_MANIFEST_SHA256={
  "directional-arrow/outline-v1.v1.json":"7411eee9421978d29d3d45f200c7b8c868388723711bee4786d047a7da4dfbcd",
@@ -168,14 +170,27 @@ def assert_marker_geometry(path):
  for position,normal in zip(positions,normals):
   pl=math.sqrt(sum(x*x for x in position)); nl=math.sqrt(sum(x*x for x in normal))
   if abs(nl-1)>1e-5 or any(abs(normal[i]-position[i]/pl)>1e-5 for i in range(3)): fail(f"{path}: marker non-radial unit normal")
- edges={}; triangles=set(); by_material={name:[] for name in materials}
+ edges={}; triangles=set(); by_material={name:[] for name in materials}; winding=[]; agreement=[]
  for primitive,name in zip(primitives,materials):
   indices=accessor_values(doc,binary,primitive["indices"])
   for i in range(0,len(indices),3):
    tri=tuple(indices[i:i+3]); key=tuple(sorted(tri))
    if key in triangles: fail(f"{path}: marker duplicate/coplanar overlapping face")
    triangles.add(key); by_material[name].append(tri)
-   for a,b in zip(tri,(tri[1],tri[2],tri[0])): edge=tuple(sorted((a,b))); edges[edge]=edges.get(edge,0)+1
+   a,b,c=(positions[index] for index in tri)
+   u=tuple(b[j]-a[j] for j in range(3)); v=tuple(c[j]-a[j] for j in range(3))
+   geometric=(u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0])
+   centroid=tuple((a[j]+b[j]+c[j])/3 for j in range(3)); outward=sum(geometric[j]*centroid[j] for j in range(3))
+   if outward<=1e-8: fail(f"{path}: marker inward/non-outward winding {outward} for {tri}")
+   winding.append(outward); length=math.sqrt(sum(value*value for value in geometric))
+   if length<=1e-12: fail(f"{path}: marker degenerate face {tri}")
+   unit=tuple(value/length for value in geometric)
+   for index in tri:
+    dot=sum(unit[j]*normals[index][j] for j in range(3))
+    if dot<=.9: fail(f"{path}: marker geometric face normal/NORMAL disagreement {dot} for {tri}/{index}")
+    agreement.append(dot)
+   for x,y in zip(tri,(tri[1],tri[2],tri[0])): edge=tuple(sorted((x,y))); edges[edge]=edges.get(edge,0)+1
+ if len(triangles)!=168 or len(winding)!=168 or len(agreement)!=504: fail(f"{path}: marker exact orientation counts")
  if any(count!=2 for count in edges.values()): fail(f"{path}: marker surface is not closed two-manifold")
  counts={name:len(faces) for name,faces in by_material.items()}
  if counts!={"mat/charcoal":24,"mat/white":80,"mat/tint_base":64}: fail(f"{path}: marker material triangle partition {counts}")
@@ -184,7 +199,7 @@ def assert_marker_geometry(path):
   visible={name for name,faces in by_material.items() if any(sign*sum(positions[index][axis] for index in tri)>1e-9 for tri in faces)}
   if visible!=set(materials): fail(f"{path}: marker materials not visible from {label}: {visible}")
   visibility[label]=sorted(visible)
- return {"closed_surface":True,"triangles":len(triangles),"material_triangle_counts":counts,"explicit_unit_radial_normals":True,"coplanar_overlapping_faces":False,"camera_material_visibility":visibility}
+ return {"closed_surface":True,"triangles":len(triangles),"material_triangle_counts":counts,"explicit_unit_radial_normals":True,"outward_ccw":True,"winding_dot_centroid_range":[min(winding),max(winding)],"geometric_normal_agreement_range":[min(agreement),max(agreement)],"orientation_face_count":len(winding),"orientation_normal_reference_count":len(agreement),"coplanar_overlapping_faces":False,"camera_material_visibility":visibility}
 
 def glb_facts(path,canonical):
  d,_=parse_glb(path); nodes=d.get("nodes",[]); names=[n.get("name") for n in nodes]
@@ -240,7 +255,7 @@ def validate(root,release,smoke=True):
   predecessor_rp=root/"release"/"raw"/PREDECESSOR_RELEASE/"manifests"/role/(variant+".v1.json")
   if not changed:
    if rp.read_bytes()!=predecessor_rp.read_bytes(): fail(f"{role}: release manifest changed outside approved scope")
-   if m["release"]!=PREDECESSOR_RELEASE: fail(f"{role}: source manifest release identity drift")
+   if sha(mp)!=UNCHANGED_MANIFEST_SHA256[f"{role}/{variant}.v1.json"]: fail(f"{role}: source manifest byte identity drift")
   if rm["files"].get("source_sha256") is not None or rm["source_authority"].get("blend_byte_determinism_claimed") is not False: fail(f"{role}: release manifest overclaims blend determinism")
   if m["schema"]!="aerobeat.gameplay-asset/v1" or (changed and m["release"]!=release): fail(f"{mp}: schema/release")
   identity=m["identity"]; canonical=f"{role}/{variant}"
@@ -252,7 +267,7 @@ def validate(root,release,smoke=True):
   if m["materials"]["analytic_only"] is not True or m["materials"]["textures"]!=[]: fail(f"{mp}: non-analytic material")
   if m["rights"]!={"license":"CC-BY-NC-4.0","creator":"AeroBeat / Gambit Games","third_party_content":False}: fail(f"{mp}: rights")
   if m["dependencies"]!=[] or m["provenance"]["external_assets"]!=[] or m["provenance"]["network"] is not False or m["provenance"]["blender"]!="4.0.2": fail(f"{mp}: provenance/dependencies")
-  manifest_release=release if changed else PREDECESSOR_RELEASE
+  manifest_release=release if changed else m["release"]
   expected_files={"source":f"source/{role}/{variant}/{variant}.blend","release":f"release/raw/{manifest_release}/{role}/{variant}.glb","source_sha256":sha(blend),"source_bytes":blend.stat().st_size,"release_sha256":sha(glb),"release_bytes":glb.stat().st_size}
   if m["files"]!=expected_files or rm["files"]!={k:v for k,v in expected_files.items() if k not in ("source_sha256","source_bytes")}: fail(f"{mp}: file paths/hashes/bytes")
   tris,aabb,d=glb_facts(glb,canonical)
@@ -293,7 +308,7 @@ def validate(root,release,smoke=True):
    extras=glass.get("extras",{}).get("aerobeat",{})
    if extras!={"blend":"alpha","cull":"back","depthTest":True,"depthWrite":False,"order":"after-grid-before-wall"}: fail("track: depth/order semantics")
   elif role=="athlete-marker":
-   expected_contract={"opacity":1.0,"alpha_mode":"OPAQUE","blend":"opaque","double_sided":False,"cull":"back","depth_test":True,"depth_write":True,"normals":"explicit-unit-radial","runtime_tint_material":"mat/tint_base","structural_materials":["mat/white","mat/charcoal"],"all_camera_directions":["+X","-X","+Y","-Y","+Z","-Z"],"coplanar_overlapping_faces":False,"canonical_instances":["nose","left-wrist","right-wrist"]}
+   expected_contract={"opacity":1.0,"alpha_mode":"OPAQUE","blend":"opaque","double_sided":False,"cull":"back","depth_test":True,"depth_write":True,"normals":"explicit-unit-radial","winding":"outward-ccw","geometric_normal_agreement":True,"source_backface_culling":True,"runtime_tint_material":"mat/tint_base","structural_materials":["mat/white","mat/charcoal"],"all_camera_directions":["+X","-X","+Y","-Y","+Z","-Z"],"coplanar_overlapping_faces":False,"canonical_instances":["nose","left-wrist","right-wrist"]}
    if m["materials"].get("contract")!=expected_contract or rm["materials"].get("contract")!=expected_contract: fail("athlete-marker: opaque structural/tint/depth contract")
    if list(materials)!=["mat/charcoal","mat/white","mat/tint_base"]: fail("athlete-marker: exact ordered material inventory")
    for name,mat in materials.items():
@@ -301,7 +316,7 @@ def validate(root,release,smoke=True):
     expected_extras={"blend":"opaque","cull":"back","depthTest":True,"depthWrite":True,"runtimeTintable":name=="mat/tint_base","structural":name in ("mat/white","mat/charcoal")}
     if mat.get("alphaMode")!="OPAQUE" or mat.get("doubleSided") is not False or factor[3]!=1 or extras!=expected_extras: fail(f"athlete-marker: material alpha/depth/tint semantics {name}")
    marker_geometry=assert_marker_geometry(glb)
-   if marker_geometry["triangles"]!=168 or marker_geometry["coplanar_overlapping_faces"] is not False: fail("athlete-marker: structural geometry")
+   if marker_geometry["triangles"]!=168 or marker_geometry["orientation_face_count"]!=168 or marker_geometry["orientation_normal_reference_count"]!=504 or marker_geometry["outward_ccw"] is not True or marker_geometry["winding_dot_centroid_range"][0]<=1e-8 or marker_geometry["geometric_normal_agreement_range"][0]<=.9 or marker_geometry["coplanar_overlapping_faces"] is not False: fail("athlete-marker: structural/orientation geometry")
   if tris!=m["geometry"]["triangle_count"] or tris>budget: fail(f"{role}: triangles {tris}/{budget}")
   flat=lambda x:[z for row in x for z in row]
   if not eq(flat(aabb),flat(m["geometry"]["measured_aabb"])): fail(f"{role}: GLB/manifest AABB")
@@ -334,7 +349,7 @@ def validate(root,release,smoke=True):
  expected_wall_claim={"source_dimensions":[.94,.94,1.0],"unit_cell_footprint":[.94,.94],"cell_pitch":[1.0,1.0],"adjacent_gap":[.06,.06],"xy_scale_authoritative":[1,1],"z_scale_authoritative":True,"centered_pivot":True,"closed_body":True,"adjacent_instances_overlap":False}
  if proof["claims"].get("wall")!=expected_wall_claim: fail("release proof wall footprint/interval contract")
  if proof["claims"].get("changed_identity")!="athlete-marker/sphere-v1" or proof["claims"].get("byte_identical_predecessor_roles")!=["directional-arrow","any-note","guard","bomb","wall","track"]: fail("release proof marker-only successor scope")
- expected_marker_claim={"dimensions":[.18,.18,.18],"canonical_identity":"athlete-marker/sphere-v1","canonical_instances":["nose","left-wrist","right-wrist"],"opacity":1.0,"alpha_mode":"OPAQUE","depth_test":True,"depth_write":True,"explicit_normals":True,"runtime_tint_material":"mat/tint_base","structural_materials":["mat/white","mat/charcoal"],"all_camera_directions":["+X","-X","+Y","-Y","+Z","-Z"],"coplanar_overlapping_faces":False}
+ expected_marker_claim={"dimensions":[.18,.18,.18],"canonical_identity":"athlete-marker/sphere-v1","canonical_instances":["nose","left-wrist","right-wrist"],"opacity":1.0,"alpha_mode":"OPAQUE","depth_test":True,"depth_write":True,"explicit_normals":True,"winding":"outward-ccw","geometric_normal_agreement":True,"source_backface_culling":True,"runtime_tint_material":"mat/tint_base","structural_materials":["mat/white","mat/charcoal"],"all_camera_directions":["+X","-X","+Y","-Y","+Z","-Z"],"coplanar_overlapping_faces":False}
  if proof["claims"].get("athlete_marker")!=expected_marker_claim: fail("release proof athlete-marker contract")
  review_dir=root/"review"/release; rh=load(review_dir/"hashes.v1.json"); layout=load(review_dir/"layout.v1.json")
  review_files={p.name for p in review_dir.glob("*.png")}
@@ -371,13 +386,16 @@ def validate(root,release,smoke=True):
  if visibility.get("schema")!="aerobeat.marker-visibility-review/v1" or visibility.get("release")!=release or visibility.get("predecessor")!=PREDECESSOR_RELEASE: fail("marker visibility review schema/releases")
  if visibility.get("backgrounds")!=["DARK ICE","BRIGHT ICE","BLUE ICE"] or comparison.get("backgrounds")!=visibility["backgrounds"]: fail("visibility review backgrounds")
  if visibility.get("counts_per_release")!={"athlete-marker":3} or comparison.get("counts_per_release")!=visibility["counts_per_release"]: fail("marker visibility review counts")
+ if comparison.get("backface_culling") is not True: fail("marker visibility comparison did not enable backface culling")
  objects=comparison["objects"]
  for version in (PREDECESSOR_RELEASE,release):
   if sum(x.get("release")==version and x["role"]=="athlete-marker" for x in objects)!=3: fail(f"marker visibility board counts for {version}")
  geometry=visibility.get("geometry",{})
- if geometry!={PREDECESSOR_RELEASE:{"dimensions":[.18,.18,.18],"triangles":168},release:{"dimensions":[.18,.18,.18],"triangles":168}}: fail("marker visibility geometry labels")
+ if geometry!={PREDECESSOR_RELEASE:{"dimensions":[.18,.18,.18],"triangles":168},release:{"dimensions":[.18,.18,.18],"triangles":168,"outward_ccw":True,"embedded_normal_agreement":True}}: fail("marker visibility geometry labels")
+ predecessor_visibility=visibility.get("materials",{}).get(PREDECESSOR_RELEASE,{})
+ if predecessor_visibility!={"names":["mat/charcoal","mat/white","mat/tint_base"],"alpha":1.0,"alpha_mode":"OPAQUE","backface_culling":True,"rejected_inward_winding":True}: fail("marker predecessor rejection evidence")
  successor=visibility.get("materials",{}).get(release,{})
- if successor!={"names":["mat/charcoal","mat/white","mat/tint_base"],"alpha":1.0,"alpha_mode":"OPAQUE","blend":"opaque","cull":"back","depth_test":True,"depth_write":True,"runtime_tint_material":"mat/tint_base","structural_materials":["mat/white","mat/charcoal"]}: fail("marker visibility material values")
+ if successor!={"names":["mat/charcoal","mat/white","mat/tint_base"],"alpha":1.0,"alpha_mode":"OPAQUE","blend":"opaque","cull":"back","depth_test":True,"depth_write":True,"backface_culling":True,"runtime_tint_material":"mat/tint_base","structural_materials":["mat/white","mat/charcoal"]}: fail("marker visibility material values")
  pass # marker-only visibility evidence has no track mutation claim
  hashes=visibility.get("glb_sha256",{})
  if hashes!={PREDECESSOR_RELEASE:sha(root/"release"/"raw"/PREDECESSOR_RELEASE/"athlete-marker/sphere-v1.glb"),release:sha(rel/"athlete-marker/sphere-v1.glb")}: fail("marker visibility GLB hashes")
@@ -385,8 +403,8 @@ def validate(root,release,smoke=True):
  faces=["plus-x","minus-x","plus-y","minus-y","plus-z","minus-z"]
  expected_face_images=[f"athlete-marker--sphere-v1--{face}-{background}.png" for background in ("bright","dark") for face in faces]
  if contrast.get("schema")!="aerobeat.athlete-marker-contrast/v1" or contrast.get("release")!=release or contrast.get("backgrounds")!=["BRIGHT","DARK"] or contrast.get("images")!=expected_face_images or contrast.get("camera_faces")!=faces: fail("athlete-marker: all-direction bright/dark review evidence")
- if contrast.get("materials")!={"alpha":1.0,"alpha_mode":"OPAQUE","blend":"opaque","cull":"back","depth_test":True,"depth_write":True,"analytic_only":True,"runtime_tint_material":"mat/tint_base","structural_materials":["mat/white","mat/charcoal"]}: fail("athlete-marker: contrast material evidence")
- if contrast.get("geometry")!={"dimensions":[.18,.18,.18],"surface":"one closed partitioned sphere","explicit_normals":True,"coplanar_overlapping_faces":False,"material_triangle_counts":{"mat/charcoal":24,"mat/white":80,"mat/tint_base":64},"all_materials_visible_each_camera_direction":True}: fail("athlete-marker: contrast geometry evidence")
+ if contrast.get("materials")!={"alpha":1.0,"alpha_mode":"OPAQUE","blend":"opaque","cull":"back","depth_test":True,"depth_write":True,"backface_culling":True,"analytic_only":True,"runtime_tint_material":"mat/tint_base","structural_materials":["mat/white","mat/charcoal"]}: fail("athlete-marker: contrast material evidence")
+ if contrast.get("geometry")!={"dimensions":[.18,.18,.18],"surface":"one closed partitioned sphere","explicit_normals":True,"outward_ccw":True,"geometric_normal_agreement":True,"coplanar_overlapping_faces":False,"material_triangle_counts":{"mat/charcoal":24,"mat/white":80,"mat/tint_base":64},"all_materials_visible_each_camera_direction":True,"exterior_visible_with_backface_culling":True}: fail("athlete-marker: contrast geometry evidence")
  direction_evidence=None
  if direction_evidence is not None: fail("athlete-marker: unexpected direction metadata state")
  ratios=contrast.get("analytic_contrast",{})
@@ -395,9 +413,9 @@ def validate(root,release,smoke=True):
   for face in faces:
    image=f"athlete-marker--sphere-v1--{face}-{background}.png"
    entry=layout["images"].get(image,{})
-   if entry.get("kind")!="athlete-marker-face-contrast" or entry.get("camera_face")!=face or entry.get("background")!=background.upper() or len(entry.get("objects",[]))!=1: fail(f"athlete-marker: missing {face}/{background} layout evidence")
+   if entry.get("kind")!="athlete-marker-face-contrast" or entry.get("camera_face")!=face or entry.get("background")!=background.upper() or entry.get("backface_culling") is not True or entry.get("embedded_normals") is not True or entry.get("exterior_visible") is not True or len(entry.get("objects",[]))!=1: fail(f"athlete-marker: missing truthful culling {face}/{background} layout evidence")
  # Tool/source policy: no third-party imports, network calls, asset loading, textures, fonts, or engine metadata.
- allowed={"argparse","ast","hashlib","json","math","os","pathlib","shutil","struct","subprocess","subprocess_contract","sys","tempfile","bpy","bpy_extras","mathutils","__future__"}
+ allowed={"argparse","ast","hashlib","json","math","os","pathlib","shutil","struct","subprocess","subprocess_contract","validate","sys","tempfile","bpy","bpy_extras","mathutils","__future__"}
  for p in sorted((root/"tools").glob("*.py")):
   tree=ast.parse(p.read_text(encoding="utf-8"),filename=str(p))
   imports=set()

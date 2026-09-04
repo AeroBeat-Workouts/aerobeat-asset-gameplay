@@ -8,7 +8,7 @@ from subprocess_contract import run_checked
 
 # Blender .blend snapshots and rendered PNGs are intentionally outside the byte-
 # deterministic contract. The complete immutable raw release is authoritative.
-SUPPORTED_RELEASE="0.0.6"
+SUPPORTED_RELEASE="0.0.7"
 def digest(p): return hashlib.sha256(p.read_bytes()).hexdigest()
 def inventory(root,release):
  base=root/"release"/"raw"/release
@@ -46,7 +46,7 @@ def main():
   builds=[Path(ad),Path(bd)]; link=Path(tempfile.gettempdir())/f"aerobeat-gameplay-repro-{os.getpid()}"
   try:
    for dest in builds:
-    for relative in ("release/raw/0.0.1","release/raw/0.0.2","release/raw/0.0.3","release/raw/0.0.4","release/raw/0.0.5","review/0.0.1","review/0.0.2","review/0.0.3","review/0.0.4","review/0.0.5"):
+    for relative in ("release/raw/0.0.1","release/raw/0.0.2","release/raw/0.0.3","release/raw/0.0.4","release/raw/0.0.5","release/raw/0.0.6","review/0.0.1","review/0.0.2","review/0.0.3","review/0.0.4","review/0.0.5","review/0.0.6"):
      target_tree=dest/relative; shutil.copytree(root/relative,target_tree)
      for directory in [target_tree,*[p for p in target_tree.rglob("*") if p.is_dir()]]: os.chmod(directory,directory.stat().st_mode|0o700)
     for relative in ("directional-arrow/outline-v1/outline-v1.blend","any-note/circle-v1/circle-v1.blend","bomb/urchin-v1/urchin-v1.blend","guard/shield-v1/shield-v1.blend","track/blue-glass-v1/blue-glass-v1.blend","wall/red-glass-v1/red-glass-v1.blend"):
@@ -55,7 +55,7 @@ def main():
     run_checked(
      [blender,"--background","--factory-startup","--python",str(root/"tools/generate.py"),"--","--output-root",str(link),"--release",a.release],
      operation=f"Blender generation {dest.name}",
-     marker="GENERATE_OK release=0.0.6 assets=7 sources=7 manifests=7 release_files=17 review_pngs=23 review_metadata=5",
+     marker="GENERATE_OK release=0.0.7 assets=7 sources=7 manifests=7 release_files=17 review_pngs=23 review_metadata=5",
      postcondition=lambda dest=dest: assert_build_postconditions(dest,a.release),
     )
     link.unlink()

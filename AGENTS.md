@@ -18,14 +18,14 @@ This repository owns only canonical, engine-neutral AeroBeat gameplay art: edita
 Generate and validate from the repository root:
 
 ```bash
-blender --background --factory-startup --python tools/generate.py -- --output-root . --release 0.0.6
-python3 tools/validate.py --root . --release 0.0.6
-python3 tools/reproducibility.py --root . --release 0.0.6
+blender --background --factory-startup --python tools/generate.py -- --output-root . --release 0.0.7
+python3 tools/validate.py --root . --release 0.0.7
+python3 tools/reproducibility.py --root . --release 0.0.7
 python3 tools/test_subprocess_contract.py --root .
-python3 tools/validate.py --root . --release 0.0.6 --finalize
+python3 tools/validate.py --root . --release 0.0.7 --finalize
 ```
 
-Generation requires the explicit supported successor `0.0.6`, preserves directional arrow, circle, guard, bomb, wall, and track source snapshots, GLBs, and per-asset manifests byte-for-byte from `0.0.5`, re-authors only `athlete-marker/sphere-v1`, and fails closed if its release or review target already exists. The marker remains one canonical `0.18`-unit sphere for nose and both wrists, with one closed partitioned surface, an explicitly runtime-tintable core, stable white/charcoal structural materials, deterministic radial normals, and alpha-1 OPAQUE depth-writing semantics visible from every cardinal camera direction. Blender may print an uncaught Python traceback and still exit zero, so all Blender-backed subprocesses must use `tools/subprocess_contract.py`: combined output, rc 0, no fatal signature, one exact operation/identity marker, and explicit postconditions. Finalized `release/raw/0.0.1` through `0.0.6` and matching review trees are immutable and must never be regenerated, deleted, or rewritten. Review PNGs belong under `review/`, never under `release/`.
+Generation requires the explicit supported successor `0.0.7`, preserves directional arrow, circle, guard, bomb, wall, and track source snapshots, GLBs, and per-asset manifests byte-for-byte from `0.0.6`, re-authors only `athlete-marker/sphere-v1`, and fails closed if either its release or review target already exists. The marker remains one canonical `0.18`-unit sphere for nose and both wrists, with one closed partitioned surface, an explicitly runtime-tintable core, stable white/charcoal structural materials, deterministic outward radial normals, outward CCW glTF winding, and positive geometric-face/NORMAL agreement. Marker source and review/import materials must enable backface culling, and culling-enabled cardinal renders must prove exterior visibility. Blender may print an uncaught Python traceback and still exit zero, so all Blender-backed subprocesses must use `tools/subprocess_contract.py`: combined output, rc 0, no fatal signature, one exact operation/identity marker, and explicit postconditions. Finalized `release/raw/0.0.1` through `0.0.6` and matching review trees are immutable and must never be regenerated, deleted, or rewritten. Review PNGs belong under `review/`, never under `release/`.
 
 ## Release rule
 
