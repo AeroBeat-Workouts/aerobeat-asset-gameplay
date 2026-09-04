@@ -18,14 +18,14 @@ This repository owns only canonical, engine-neutral AeroBeat gameplay art: edita
 Generate and validate from the repository root:
 
 ```bash
-blender --background --factory-startup --python tools/generate.py -- --output-root . --release 0.0.5
-python3 tools/validate.py --root . --release 0.0.5
-python3 tools/reproducibility.py --root . --release 0.0.5
+blender --background --factory-startup --python tools/generate.py -- --output-root . --release 0.0.6
+python3 tools/validate.py --root . --release 0.0.6
+python3 tools/reproducibility.py --root . --release 0.0.6
 python3 tools/test_subprocess_contract.py --root .
-python3 tools/validate.py --root . --release 0.0.5 --finalize
+python3 tools/validate.py --root . --release 0.0.6 --finalize
 ```
 
-Generation requires the explicit supported successor `0.0.5`, preserves six non-wall source snapshots and GLBs byte-for-byte from `0.0.4`, re-authors only `wall/red-glass-v1` to exact `0.94 × 0.94 × 1.00` source dimensions, and fails closed if its release target already exists. Wall X/Y remains unit scale with an exact `0.06` gap on the canonical `1.0` cell pitch; only Z is scaled from the authoritative interval. Blender may print an uncaught Python traceback and still exit zero, so all Blender-backed subprocesses must use `tools/subprocess_contract.py`: combined output, rc 0, no fatal signature, one exact operation/identity marker, and explicit postconditions. Finalized `release/raw/0.0.1` through `0.0.4` and matching review trees are immutable and must never be regenerated, deleted, or rewritten. Review PNGs belong under `review/`, never under `release/`.
+Generation requires the explicit supported successor `0.0.6`, preserves directional arrow, circle, guard, bomb, wall, and track source snapshots, GLBs, and per-asset manifests byte-for-byte from `0.0.5`, re-authors only `athlete-marker/sphere-v1`, and fails closed if its release or review target already exists. The marker remains one canonical `0.18`-unit sphere for nose and both wrists, with one closed partitioned surface, an explicitly runtime-tintable core, stable white/charcoal structural materials, deterministic radial normals, and alpha-1 OPAQUE depth-writing semantics visible from every cardinal camera direction. Blender may print an uncaught Python traceback and still exit zero, so all Blender-backed subprocesses must use `tools/subprocess_contract.py`: combined output, rc 0, no fatal signature, one exact operation/identity marker, and explicit postconditions. Finalized `release/raw/0.0.1` through `0.0.6` and matching review trees are immutable and must never be regenerated, deleted, or rewritten. Review PNGs belong under `review/`, never under `release/`.
 
 ## Release rule
 

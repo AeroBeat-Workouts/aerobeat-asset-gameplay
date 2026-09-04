@@ -8,7 +8,7 @@ from subprocess_contract import run_checked
 
 # Blender .blend snapshots and rendered PNGs are intentionally outside the byte-
 # deterministic contract. The complete immutable raw release is authoritative.
-SUPPORTED_RELEASE="0.0.5"
+SUPPORTED_RELEASE="0.0.6"
 def digest(p): return hashlib.sha256(p.read_bytes()).hexdigest()
 def inventory(root,release):
  base=root/"release"/"raw"/release
@@ -23,7 +23,8 @@ def assert_build_postconditions(root,release):
  expected_release={"inventory.v1.json","proof.v1.json","sets/default-v1.json"}|{path for role,variant in ASSETS for path in (f"{role}/{variant}.glb",f"manifests/{role}/{variant}.v1.json")}
  expected_sources={f"{role}/{variant}/{variant}.blend" for role,variant in ASSETS}
  expected_manifests={f"{role}/{variant}.v1.json" for role,variant in ASSETS}
- expected_pngs={"neutral-board.png","gameplay-context.png","wall-grid-comparison.png","visibility-comparison.png","directional-arrow--outline-v1--plus-z-bright.png","directional-arrow--outline-v1--minus-z-bright.png"}|{f"{role}--{variant}.png" for role,variant in ASSETS}
+ marker_faces={f"athlete-marker--sphere-v1--{face}-{background}.png" for face in ("plus-x","minus-x","plus-y","minus-y","plus-z","minus-z") for background in ("bright","dark")}
+ expected_pngs={"neutral-board.png","gameplay-context.png","wall-grid-comparison.png","visibility-comparison.png"}|marker_faces|{f"{role}--{variant}.png" for role,variant in ASSETS}
  actual_release={p.relative_to(rel).as_posix() for p in rel.rglob("*") if p.is_file()}
  actual_sources={p.relative_to(root/"source").as_posix() for p in (root/"source").rglob("*") if p.is_file()}
  actual_manifests={p.relative_to(root/"manifests").as_posix() for p in (root/"manifests").rglob("*") if p.is_file()}
@@ -45,15 +46,16 @@ def main():
   builds=[Path(ad),Path(bd)]; link=Path(tempfile.gettempdir())/f"aerobeat-gameplay-repro-{os.getpid()}"
   try:
    for dest in builds:
-    for relative in ("release/raw/0.0.1","release/raw/0.0.2","release/raw/0.0.3","release/raw/0.0.4","review/0.0.1","review/0.0.2","review/0.0.3","review/0.0.4"):
-     shutil.copytree(root/relative,dest/relative)
-    for relative in ("directional-arrow/outline-v1/outline-v1.blend","any-note/circle-v1/circle-v1.blend","athlete-marker/sphere-v1/sphere-v1.blend","bomb/urchin-v1/urchin-v1.blend","guard/shield-v1/shield-v1.blend","track/blue-glass-v1/blue-glass-v1.blend"):
+    for relative in ("release/raw/0.0.1","release/raw/0.0.2","release/raw/0.0.3","release/raw/0.0.4","release/raw/0.0.5","review/0.0.1","review/0.0.2","review/0.0.3","review/0.0.4","review/0.0.5"):
+     target_tree=dest/relative; shutil.copytree(root/relative,target_tree)
+     for directory in [target_tree,*[p for p in target_tree.rglob("*") if p.is_dir()]]: os.chmod(directory,directory.stat().st_mode|0o700)
+    for relative in ("directional-arrow/outline-v1/outline-v1.blend","any-note/circle-v1/circle-v1.blend","bomb/urchin-v1/urchin-v1.blend","guard/shield-v1/shield-v1.blend","track/blue-glass-v1/blue-glass-v1.blend","wall/red-glass-v1/red-glass-v1.blend"):
      target=dest/"source"/relative; target.parent.mkdir(parents=True,exist_ok=True); shutil.copyfile(root/"source"/relative,target)
     link.symlink_to(dest,target_is_directory=True)
     run_checked(
      [blender,"--background","--factory-startup","--python",str(root/"tools/generate.py"),"--","--output-root",str(link),"--release",a.release],
      operation=f"Blender generation {dest.name}",
-     marker="GENERATE_OK release=0.0.5 assets=7 sources=7 manifests=7 release_files=17 review_pngs=13 review_metadata=5",
+     marker="GENERATE_OK release=0.0.6 assets=7 sources=7 manifests=7 release_files=17 review_pngs=23 review_metadata=5",
      postcondition=lambda dest=dest: assert_build_postconditions(dest,a.release),
     )
     link.unlink()
