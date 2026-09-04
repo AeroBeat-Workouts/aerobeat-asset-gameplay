@@ -56,7 +56,7 @@ raise SystemExit(0)
         fake.chmod(0o755)
         base_env = os.environ.copy()
         base_env["PATH"] = temp + os.pathsep + base_env.get("PATH", "")
-        marker = "GENERATE_OK release=0.0.3 assets=7 sources=7 manifests=7 release_files=17 review_pngs=10 review_metadata=3"
+        marker = "GENERATE_OK release=0.0.4 assets=7 sources=7 manifests=7 release_files=17 review_pngs=12 review_metadata=4"
         for scenario, expected in (
             ("traceback", "fatal output signature"),
             ("missing", "expected exact completion marker once, found 0"),
@@ -65,7 +65,7 @@ raise SystemExit(0)
             env = base_env.copy(); env["FAKE_BLENDER_SCENARIO"] = scenario
             require_contract_failure([str(fake), "--operation"], f"fake generation {scenario}", marker, env, expected)
             completed = subprocess.run(
-                [sys.executable, str(root / "tools/validate.py"), "--root", str(root), "--release", "0.0.3"],
+                [sys.executable, str(root / "tools/validate.py"), "--root", str(root), "--release", "0.0.4"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -74,7 +74,7 @@ raise SystemExit(0)
             if completed.returncode == 0 or expected not in completed.stdout:
                 raise AssertionError(f"validator accepted fake Blender {scenario}:\n{completed.stdout}")
             reproduced = subprocess.run(
-                [sys.executable, str(root / "tools/reproducibility.py"), "--root", str(root), "--release", "0.0.3"],
+                [sys.executable, str(root / "tools/reproducibility.py"), "--root", str(root), "--release", "0.0.4"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,

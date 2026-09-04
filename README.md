@@ -9,8 +9,9 @@ Canonical, cross-engine gameplay art for AeroBeat. This repository owns editable
 - `sets/default-v1.json` — independently maps each semantic role to one variant.
 - `release/raw/0.0.1/` — immutable original runtime payload, retained byte-for-byte.
 - `release/raw/0.0.2/` — immutable corrected runtime predecessor; retained byte-for-byte.
-- `release/raw/0.0.3/` — immutable visibility successor: the complete seven-asset shape with opaque tintable arrows and a materially stronger blue-glass track; never sources or tools.
-- `review/<version>/` — Blender-rendered visual evidence, calculated containment metadata, and hashes outside runtime releases; `review/0.0.1/` and `review/0.0.2/` remain unchanged.
+- `release/raw/0.0.3/` — immutable visibility predecessor retained byte-for-byte.
+- `release/raw/0.0.4/` — deterministic bidirectional-arrow successor: the complete seven-asset shape with a closed, non-coplanar, opaque `outline-v1` styled on both `+Z` and `-Z`; never sources or tools.
+- `review/<version>/` — Blender-rendered visual evidence, calculated containment/contrast metadata, and hashes outside runtime releases; `review/0.0.1/` through `review/0.0.3/` remain unchanged.
 - `tools/` — locally authored Blender/Python generation, export, review, and strict validation scripts.
 
 After a release validates, do not mutate it. Corrections require a new release version.
@@ -20,14 +21,14 @@ After a release validates, do not mutate it. Corrections require a new release v
 Requires Blender `4.0.2` and Python 3.
 
 ```bash
-blender --background --factory-startup --python tools/generate.py -- --output-root . --release 0.0.3
-python3 tools/validate.py --root . --release 0.0.3
-python3 tools/reproducibility.py --root . --release 0.0.3
+blender --background --factory-startup --python tools/generate.py -- --output-root . --release 0.0.4
+python3 tools/validate.py --root . --release 0.0.4
+python3 tools/reproducibility.py --root . --release 0.0.4
 python3 tools/test_subprocess_contract.py --root .
-python3 tools/validate.py --root . --release 0.0.3 --finalize
+python3 tools/validate.py --root . --release 0.0.4 --finalize
 ```
 
-Generation requires an explicit supported release, preserves the five unchanged source snapshots, authors only the arrow/track material successors, exports the complete seven separate `.glb` files, writes measured manifests/proof, and renders review evidence. The arrow core is neutral and runtime-tintable to red/yellow/green while every arrow material is alpha `1.0`, explicit `OPAQUE`, back-face culled, depth-tested, and depth-writing; its structural white outline remains untinted. Track body alpha is `0.52`, intentionally `2.6×` the predecessor's `0.20`: strong enough to read over bright ice while remaining translucent blue glass, depth-tested, depth-write-off, and ordered after grid surfaces but before walls. Validation parses GLB headers and JSON chunks, checks exact source/release inventory, hashes, names, bounds, pivots, budgets, material/depth/order contracts, dependencies, license integrity, and predecessor immutability, verifies calculated review containment/counts/labels, then factory-opens all seven editable sources and smoke-imports all seven GLBs. Every subprocess uses one fail-closed contract: combined output, zero return code, no traceback/uncaught signature, exactly one identity/operation completion marker, and caller-owned postconditions. Reproducibility requires the generator and nested validator markers plus complete source/manifest/set/release/review inventories before comparing both temporary builds with the immutable primary.
+Generation requires explicit supported successor `0.0.4`, preserves six unchanged source snapshots, re-authors only the arrow source, exports the complete seven separate `.glb` files, writes measured manifests/proof, and renders review evidence. The arrow is three closed, nested, depth-separated opaque solids: a white outer frame at `Z=±0.09`, charcoal separator at `Z=±0.088`, and tintable core at `Z=±0.086`. Both camera-accessible faces therefore retain the same untinted white/charcoal treatment with no coplanar overlapping caps. Every arrow material is alpha `1.0`, explicit `OPAQUE`, back-face culled, depth-tested, and depth-writing. Eight screen directions are rotations about local Z for a `+Z` runtime camera, with no renderer Y flip. The unchanged track remains alpha `0.52`, translucent blue glass, depth-tested, depth-write-off, and ordered after grid surfaces but before walls. Validation parses GLB headers, JSON/BIN chunks, checks closed two-manifold arrow geometry, rejects positive-area coplanar cap overlap, verifies both-face depth structure and eight direction semantics, checks exact inventory/hashes/names/bounds/pivots/budgets/material contracts/dependencies/license/predecessor immutability, and verifies `+Z`/`-Z` bright-background review containment and analytic contrast before clean Blender source/GLB smoke operations. Every subprocess uses one fail-closed contract. Reproducibility compares both temporary builds with the immutable primary.
 
 ## Coordinates and consumption
 

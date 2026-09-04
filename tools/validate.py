@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Strict release/source validator for the canonical AeroBeat gameplay package."""
 from __future__ import annotations
-import argparse, ast, hashlib, json, os, shutil, struct, sys
+import argparse, ast, hashlib, json, math, os, shutil, struct, sys
 from pathlib import Path
 
 from subprocess_contract import run_checked
 
-SUPPORTED_RELEASE="0.0.3"
-PREDECESSOR_RELEASE="0.0.2"
+SUPPORTED_RELEASE="0.0.4"
+PREDECESSOR_RELEASE="0.0.3"
 EXPECTED_LICENSE_SHA256="41003d4a74749c0220e33dd415042164b5a1093ed401f36277234f772d22d3d0"
 EXPECTED_LICENSE_BYTES=19347
 PREDECESSOR_TREES={
@@ -15,6 +15,8 @@ PREDECESSOR_TREES={
  "review/0.0.1":(10,"1fed80f58288f85c2cd93c212994b1a3eb10631097260f79f4d06a0df5ee0a7e"),
  "release/raw/0.0.2":(17,"76cc77cab3f2ed1869cc759c096b89531b4da70b941689d00323869ca7045dec"),
  "review/0.0.2":(11,"2ac3a84590af70569eb3fd64f3c2387878eb27f74df4effcd337f6b3e0e85528"),
+ "release/raw/0.0.3":(17,"b3e7364637d363537554fe10e6e85a3ab724fe45b67ba70837547ed89f5e3afa"),
+ "review/0.0.3":(13,"0540616b54e3d5d0dec5437914650b59ac7c25b475370cb8aed4c5bfca244ee6"),
 }
 UNCHANGED_SOURCE_SHA256={
  "any-note/circle-v1/circle-v1.blend":"d4326da274913b454d8af9888c71295235bfd81c2c891fbbc980bea34f54365e",
@@ -22,10 +24,10 @@ UNCHANGED_SOURCE_SHA256={
  "bomb/urchin-v1/urchin-v1.blend":"ff251ad67d6c95b4ffd1fc6fed65fb74cd94696b1dff32438b4c2b5138e4ebe9",
  "guard/shield-v1/shield-v1.blend":"f3254883e8b68802792b538bf5ffe27a9eae65fb9b18dc39eebd6f8f5863978b",
  "wall/red-glass-v1/red-glass-v1.blend":"8d77e2cbd9efa6813b792d30f1428584dc93febccbe89791d40f89b9859e2547",
+ "track/blue-glass-v1/blue-glass-v1.blend":"2c2424b3d2d18bb3b49799ecfd6ed2f8810b7d469c46dc70a889a5c04c052b51",
 }
 PREDECESSOR_CHANGED_SOURCE_SHA256={
- "directional-arrow/outline-v1/outline-v1.blend":"6b1c4d8b8f501d2960f382b4ae7f908c353c7b015610505126e41cbb86ac4344",
- "track/blue-glass-v1/blue-glass-v1.blend":"da6330cf19bb537ac94f847397eb97c89bf4b50a1cb8b79c95cd3ebab6e80503",
+ "directional-arrow/outline-v1/outline-v1.blend":"84600edfb0e9aa8e321bf13c112bc02cdbe816d24f157166464be760b63131b5",
 }
 EXPECTED={
 "directional-arrow":("outline-v1",[.78,.78,.18],[0,0,0],420),
@@ -38,6 +40,7 @@ EXPECTED={
 }
 TOP_KEYS={"schema","release","identity","files","names","source_authority","geometry","coordinates","materials","reuse","rights","provenance","dependencies"}
 GEO_KEYS={"dimensions","measured_aabb","pivot","object_origin","rotation_euler","scale","triangle_count","triangle_budget","collision_free_bound"}
+SCREEN_DIRECTIONS={"up":0,"up-right":-45,"right":-90,"down-right":-135,"down":180,"down-left":135,"left":90,"up-left":45}
 
 def load(p): return json.loads(p.read_text(encoding="utf-8"))
 def sha(p):
@@ -78,6 +81,51 @@ def parse_glb(path):
  forbidden={"KHR_draco_mesh_compression","EXT_meshopt_compression"}
  if forbidden.intersection(doc.get("extensionsUsed",[])): fail(f"{path}: unsupported compressed dependency")
  return doc,bins[0]
+
+def accessor_values(doc,binary,index):
+ a=doc["accessors"][index]; view=doc["bufferViews"][a["bufferView"]]; off=view.get("byteOffset",0)+a.get("byteOffset",0); count=a["count"]
+ if a["type"]=="VEC3" and a["componentType"]==5126: return [struct.unpack_from("<fff",binary,off+i*12) for i in range(count)]
+ fmt,size={5123:("<H",2),5125:("<I",4)}[a["componentType"]]
+ return [struct.unpack_from(fmt,binary,off+i*size)[0] for i in range(count)]
+
+def polygon_area_2d(poly):
+ return sum(poly[i][0]*poly[(i+1)%len(poly)][1]-poly[(i+1)%len(poly)][0]*poly[i][1] for i in range(len(poly)))*.5
+
+def triangle_intersection_area(a,b):
+ subject=list(a)
+ clip=list(b)
+ if polygon_area_2d(clip)<0: clip.reverse()
+ for i in range(3):
+  p,q=clip[i],clip[(i+1)%3]
+  if not subject: return 0.0
+  result=[]
+  def side(x): return (q[0]-p[0])*(x[1]-p[1])-(q[1]-p[1])*(x[0]-p[0])
+  for s,e in zip(subject,subject[1:]+subject[:1]):
+   ds,de=side(s),side(e); sins=ds>=-1e-10; eins=de>=-1e-10
+   if sins!=eins:
+    den=ds-de
+    if abs(den)>1e-14:
+     t=ds/den; result.append((s[0]+t*(e[0]-s[0]),s[1]+t*(e[1]-s[1])))
+   if eins: result.append(e)
+  subject=result
+ return abs(polygon_area_2d(subject)) if len(subject)>=3 else 0.0
+
+def assert_closed_nonoverlapping_mesh(path):
+ doc,binary=parse_glb(path); positions=accessor_values(doc,binary,doc["meshes"][0]["primitives"][0]["attributes"]["POSITION"]); caps={}; edges={}
+ for primitive in doc["meshes"][0]["primitives"]:
+  indices=accessor_values(doc,binary,primitive["indices"])
+  for i in range(0,len(indices),3):
+   tri=indices[i:i+3]; points=[positions[j] for j in tri]
+   for a,b in zip(tri,(tri[1],tri[2],tri[0])):
+    edge=tuple(sorted((a,b))); edges[edge]=edges.get(edge,0)+1
+   if max(p[2] for p in points)-min(p[2] for p in points)<=1e-7:
+    z=round(sum(p[2] for p in points)/3,6); caps.setdefault(z,[]).append([(p[0],p[1]) for p in points])
+ if any(count!=2 for count in edges.values()): fail(f"{path}: mesh is not closed two-manifold")
+ for z,triangles in caps.items():
+  for i,a in enumerate(triangles):
+   for b in triangles[i+1:]:
+    if triangle_intersection_area(a,b)>1e-9: fail(f"{path}: coplanar overlapping caps at z={z}")
+ return {str(z):len(v) for z,v in sorted(caps.items())}
 
 def glb_facts(path,canonical):
  d,_=parse_glb(path); nodes=d.get("nodes",[]); names=[n.get("name") for n in nodes]
@@ -133,7 +181,7 @@ def validate(root,release,smoke=True):
   if identity!={"role":role,"variant":variant,"canonical_name":canonical}: fail(f"{mp}: identity")
   if m["geometry"]["dimensions"]!=dims or m["geometry"]["pivot"]!=pivot or m["geometry"]["triangle_budget"]!=budget: fail(f"{mp}: spec geometry declaration")
   if m["geometry"]["object_origin"]!=[0,0,0] or m["geometry"]["rotation_euler"]!=[0,0,0] or m["geometry"]["scale"]!=[1,1,1]: fail(f"{mp}: transforms")
-  if m["coordinates"]!={"handedness":"right","up":"+Y","forward":"-Z","visible_face":"-Z" if role in ("directional-arrow","any-note","guard") else "not-applicable"}: fail(f"{mp}: coordinate contract")
+  if m["coordinates"]!={"handedness":"right","up":"+Y","forward":"-Z","visible_face":"both +Z/-Z" if role=="directional-arrow" else ("-Z" if role in ("any-note","guard") else "not-applicable")}: fail(f"{mp}: coordinate contract")
   if m["materials"]["analytic_only"] is not True or m["materials"]["textures"]!=[]: fail(f"{mp}: non-analytic material")
   if m["rights"]!={"license":"CC-BY-NC-4.0","creator":"AeroBeat / Gambit Games","third_party_content":False}: fail(f"{mp}: rights")
   if m["dependencies"]!=[] or m["provenance"]["external_assets"]!=[] or m["provenance"]["network"] is not False or m["provenance"]["blender"]!="4.0.2": fail(f"{mp}: provenance/dependencies")
@@ -144,7 +192,7 @@ def validate(root,release,smoke=True):
   if m["names"]!=expected_names or rm["names"]!=expected_names or m["materials"]["names"]!=expected_names["materials"]: fail(f"{role}: mesh/node/material names")
   materials={x["name"]:x for x in d.get("materials",[])}
   if role=="directional-arrow":
-   expected_contract={"opacity":1.0,"alpha_mode":"OPAQUE","blend":"opaque","double_sided":False,"cull":"back","depth_test":True,"depth_write":True,"white_outline_material":"mat/white","runtime_tint_material":"mat/tint_base","runtime_tint_targets":["red","yellow","green"]}
+   expected_contract={"opacity":1.0,"alpha_mode":"OPAQUE","blend":"opaque","double_sided":False,"cull":"back","depth_test":True,"depth_write":True,"white_outline_material":"mat/white","runtime_tint_material":"mat/tint_base","runtime_tint_targets":["red","yellow","green"],"styled_faces":["+Z","-Z"],"coplanar_overlapping_caps":False,"renderer_y_flip":False,"screen_direction_rotation_degrees":SCREEN_DIRECTIONS}
    if m["materials"].get("contract")!=expected_contract or rm["materials"].get("contract")!=expected_contract: fail("directional-arrow: opaque/tint contract")
    if set(materials)!={"mat/charcoal","mat/white","mat/tint_base"}: fail("directional-arrow: exact material inventory")
    for name,mat in materials.items():
@@ -153,6 +201,12 @@ def validate(root,release,smoke=True):
     if extras.get("blend")!="opaque" or extras.get("cull")!="back" or extras.get("depthTest") is not True or extras.get("depthWrite") is not True: fail(f"directional-arrow: depth/blend/cull semantics {name}")
    if materials["mat/tint_base"].get("extras",{}).get("aerobeat",{}).get("runtimeTintable") is not True: fail("directional-arrow: core not runtime tintable")
    if materials["mat/white"].get("extras",{}).get("aerobeat",{}).get("runtimeTintable") is not False: fail("directional-arrow: white outline must not be runtime tinted")
+   cap_counts=assert_closed_nonoverlapping_mesh(glb)
+   if cap_counts!={"-0.09":14,"-0.088":14,"-0.086":5,"0.086":5,"0.088":14,"0.09":14}: fail(f"directional-arrow: unexpected styled face depth structure {cap_counts}")
+   expected_vectors={"up":(0,1),"up-right":(1,1),"right":(1,0),"down-right":(1,-1),"down":(0,-1),"down-left":(-1,-1),"left":(-1,0),"up-left":(-1,1)}
+   for direction,degrees in SCREEN_DIRECTIONS.items():
+    radians=math.radians(degrees); vector=(-math.sin(radians),math.cos(radians)); signs=tuple(0 if abs(x)<1e-5 else (1 if x>0 else -1) for x in vector)
+    if signs!=expected_vectors[direction]: fail(f"directional-arrow: incorrect +Z screen semantic {direction}={degrees}")
   elif role=="track":
    expected_contract={"opacity":0.52,"predecessor_opacity":0.20,"opacity_multiplier":2.6,"alpha_mode":"BLEND","blend":"alpha","double_sided":False,"cull":"back","depth_test":True,"depth_write":False,"order":"after-grid-before-wall","justification":"0.52 is 2.6x stronger than 0.20 and remains translucent blue glass over bright ice."}
    if m["materials"].get("contract")!=expected_contract or rm["materials"].get("contract")!=expected_contract: fail("track: visibility/depth/order contract")
@@ -170,8 +224,8 @@ def validate(root,release,smoke=True):
   measured=[aabb[1][i]-aabb[0][i] for i in range(3)]
   if not eq(measured,dims,2e-4): fail(f"{role}: exact dimensions {measured} != {dims}")
   predecessor_glb=root/"release"/"raw"/PREDECESSOR_RELEASE/role/(variant+".glb")
-  if role in ("directional-arrow","track"):
-   if sha(glb)==sha(predecessor_glb): fail(f"{role}: required material successor GLB is unchanged")
+  if role=="directional-arrow":
+   if sha(glb)==sha(predecessor_glb): fail(f"{role}: required geometry successor GLB is unchanged")
   elif glb.read_bytes()!=predecessor_glb.read_bytes(): fail(f"{role}: geometry/material GLB changed outside approved scope")
   manifests.append((role,variant,glb,tris,aabb))
  actual={p.relative_to(rel).as_posix() for p in rel.rglob("*") if p.is_file()}
@@ -187,12 +241,15 @@ def validate(root,release,smoke=True):
   if e!={"path":p,"bytes":q.stat().st_size,"sha256":sha(q)}: fail(f"inventory hash/size {p}")
  proof=load(rel/"proof.v1.json")
  if proof["inventory_sha256"]!=sha(rel/"inventory.v1.json") or proof["claims"].get("combined_glb") is not False or proof["determinism"]["blend_snapshots_in_scope"] is not False: fail("release proof")
+ arrow_claim=proof["claims"].get("directional_arrow",{})
+ if arrow_claim.get("styled_faces")!=["+Z","-Z"] or arrow_claim.get("coplanar_overlapping_caps") is not False or arrow_claim.get("renderer_y_flip") is not False or arrow_claim.get("screen_direction_rotation_degrees")!=SCREEN_DIRECTIONS: fail("release proof directional-arrow structure/semantics")
  review_dir=root/"review"/release; rh=load(review_dir/"hashes.v1.json"); layout=load(review_dir/"layout.v1.json")
  review_files={p.name for p in review_dir.glob("*.png")}
- expected_reviews={"neutral-board.png","gameplay-context.png","visibility-comparison.png"}|{r+"--"+v[0]+".png" for r,v in EXPECTED.items()}
+ expected_reviews={"neutral-board.png","gameplay-context.png","visibility-comparison.png","directional-arrow--outline-v1--plus-z-bright.png","directional-arrow--outline-v1--minus-z-bright.png"}|{r+"--"+v[0]+".png" for r,v in EXPECTED.items()}
  if review_files!=expected_reviews or {x["path"] for x in rh["files"]}!=review_files or rh["resolution"]!=[1600,900]: fail("review inventory/resolution")
  if rh.get("layout")!={"path":"layout.v1.json","bytes":(review_dir/"layout.v1.json").stat().st_size,"sha256":sha(review_dir/"layout.v1.json")}: fail("review layout hash/size")
  if rh.get("visibility")!={"path":"visibility.v1.json","bytes":(review_dir/"visibility.v1.json").stat().st_size,"sha256":sha(review_dir/"visibility.v1.json")}: fail("review visibility hash/size")
+ if rh.get("contrast")!={"path":"contrast.v1.json","bytes":(review_dir/"contrast.v1.json").stat().st_size,"sha256":sha(review_dir/"contrast.v1.json")}: fail("review contrast hash/size")
  for e in rh["files"]:
   p=review_dir/e["path"]; data=p.read_bytes()
   if e.get("bytes")!=p.stat().st_size or sha(p)!=e["sha256"] or data[:8]!=b"\x89PNG\r\n\x1a\n" or struct.unpack(">IIBB",data[16:26])!=(1600,900,8,2): fail(f"review RGB/hash {e['path']}")
@@ -218,12 +275,24 @@ def validate(root,release,smoke=True):
  for version in (PREDECESSOR_RELEASE,release):
   if sum(x.get("release")==version and x["role"]=="directional-arrow" for x in objects)!=3 or sum(x.get("release")==version and x["role"]=="track" for x in objects)!=3: fail(f"visibility board counts for {version}")
  geometry=visibility.get("geometry",{})
- if geometry!={"directional-arrow":{"dimensions":[.78,.78,.18],"triangles":71},"track":{"dimensions":[4.2,.06,24.0],"triangles":60}}: fail("visibility review geometry labels")
+ if geometry!={"directional-arrow":{"dimensions":[.78,.78,.18],"triangles":136},"track":{"dimensions":[4.2,.06,24.0],"triangles":60}}: fail("visibility review geometry labels")
  successor=visibility.get("materials",{}).get(release,{})
  if successor.get("directional-arrow",{}).get("alpha")!=1.0 or successor.get("directional-arrow",{}).get("runtime_tint_targets")!=["red","yellow","green"]: fail("visibility review arrow material values")
  if successor.get("track",{}).get("alpha")!=.52 or successor.get("track",{}).get("opacity_multiplier")!=2.6 or successor.get("track",{}).get("order")!="after-grid-before-wall": fail("visibility review track material values")
  hashes=visibility.get("glb_sha256",{})
  if hashes.get(PREDECESSOR_RELEASE)!={"directional-arrow":sha(root/"release"/"raw"/PREDECESSOR_RELEASE/"directional-arrow/outline-v1.glb"),"track":sha(root/"release"/"raw"/PREDECESSOR_RELEASE/"track/blue-glass-v1.glb")} or hashes.get(release)!={"directional-arrow":sha(rel/"directional-arrow/outline-v1.glb"),"track":sha(rel/"track/blue-glass-v1.glb")}: fail("visibility review GLB hashes")
+ contrast=load(review_dir/"contrast.v1.json")
+ expected_face_images=["directional-arrow--outline-v1--plus-z-bright.png","directional-arrow--outline-v1--minus-z-bright.png"]
+ if contrast.get("schema")!="aerobeat.directional-arrow-contrast/v1" or contrast.get("release")!=release or contrast.get("background")!="BRIGHT ICE" or contrast.get("images")!=expected_face_images or contrast.get("camera_faces")!=["plus-z","minus-z"]: fail("directional-arrow: +Z/-Z bright review evidence")
+ if contrast.get("materials")!={"alpha":1.0,"alpha_mode":"OPAQUE","depth_test":True,"depth_write":True,"analytic_only":True}: fail("directional-arrow: contrast material evidence")
+ if contrast.get("structural_depths")!={"white_outer_faces":[-.09,.09],"charcoal_separator_faces":[-.088,.088],"tint_core_faces":[-.086,.086],"coplanar_overlapping_caps":False}: fail("directional-arrow: structural depth evidence")
+ direction_evidence=contrast.get("screen_directions",{})
+ if direction_evidence!={"camera_face":"plus-z","renderer_y_flip":False,"local_base_vector":[0,1],"rotation_degrees":SCREEN_DIRECTIONS}: fail("directional-arrow: eight screen direction evidence")
+ ratios=contrast.get("analytic_contrast",{})
+ if ratios.get("minimum_required")!=7.0 or ratios.get("white_vs_charcoal",0)<7.0 or ratios.get("charcoal_vs_bright_ice",0)<7.0: fail(f"directional-arrow: insufficient bright-background contrast {ratios}")
+ for face,image in zip(("plus-z","minus-z"),expected_face_images):
+  entry=layout["images"].get(image,{})
+  if entry.get("kind")!="directional-arrow-face-contrast" or entry.get("camera_face")!=face or entry.get("background")!="BRIGHT ICE" or len(entry.get("objects",[]))!=1: fail(f"directional-arrow: missing {face} layout evidence")
  # Tool/source policy: no third-party imports, network calls, asset loading, textures, fonts, or engine metadata.
  allowed={"argparse","ast","hashlib","json","math","os","pathlib","shutil","struct","subprocess","subprocess_contract","sys","tempfile","bpy","bpy_extras","mathutils","__future__"}
  for p in sorted((root/"tools").glob("*.py")):

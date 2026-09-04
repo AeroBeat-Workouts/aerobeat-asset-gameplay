@@ -13,12 +13,12 @@ import bpy
 from bpy_extras.object_utils import world_to_camera_view
 from mathutils import Vector
 
-SUPPORTED_RELEASE = "0.0.3"
-PREDECESSOR_RELEASE = "0.0.2"
+SUPPORTED_RELEASE = "0.0.4"
+PREDECESSOR_RELEASE = "0.0.3"
 VERSION = None
 BLENDER = "4.0.2"
-GENERATOR = "aerobeat-gameplay-generator-v2"
-CHANGED_SOURCE_ROLES = {"directional-arrow", "track"}
+GENERATOR = "aerobeat-gameplay-generator-v3"
+CHANGED_SOURCE_ROLES = {"directional-arrow"}
 
 ASSETS = [
     dict(role="directional-arrow", variant="outline-v1", dimensions=[0.78,0.78,0.18], pivot=[0,0,0], budget=420, bound=[[-0.42,-0.42,-0.11],[0.42,0.42,0.11]], reuse="one mesh for Flow and Boxing; rotate only about local Z"),
@@ -29,6 +29,11 @@ ASSETS = [
     dict(role="track", variant="blue-glass-v1", dimensions=[4.20,0.06,24.00], pivot=[0,0.03,0], budget=160, bound=[[-2.14,-0.04,-12.04],[2.14,0.08,12.04]], reuse="one canonical segment; extend by deterministic segment reuse, never stretch lane-line width"),
     dict(role="athlete-marker", variant="sphere-v1", dimensions=[0.18,0.18,0.18], pivot=[0,0,0], budget=192, bound=[[-0.10,-0.10,-0.10],[0.10,0.10,0.10]], reuse="same full 3D sphere for nose and both wrists; truthful world positions and normal depth"),
 ]
+
+SCREEN_DIRECTIONS = {
+    "up": 0, "up-right": -45, "right": -90, "down-right": -135,
+    "down": 180, "down-left": 135, "left": 90, "up-left": 45,
+}
 
 COLORS = {
     "white": ((0.95,0.98,1.0,1),0.30,0.45,"OPAQUE"),
@@ -123,7 +128,7 @@ def ring(outer,inner,z):
     return v,f
 
 def rimmed_plate(poly,z0,z1,separator_scale,inset_scale,inset_material):
-    """Explicit white perimeter, bounded charcoal separator, and colored inset."""
+    """Legacy single-face plate retained byte-identically for circle and shield."""
     outer=list(poly)
     if polygon_area(outer)<0: outer.reverse()
     separator=[(x*separator_scale,y*separator_scale) for x,y in outer]
@@ -134,6 +139,31 @@ def rimmed_plate(poly,z0,z1,separator_scale,inset_scale,inset_material):
     parts.append((*ring(separator,inset,z0),"charcoal"))
     parts.append((*extrude(inset,z0,z1),inset_material))
     return parts
+
+def closed_frame(outer,inner,z0,z1):
+    """Closed annular extrusion with no cap overlap and outward winding."""
+    if len(outer)!=len(inner): raise ValueError("frame loops must correspond")
+    n=len(outer); v=[(x,y,z0) for x,y in outer]+[(x,y,z1) for x,y in outer]+[(x,y,z0) for x,y in inner]+[(x,y,z1) for x,y in inner]; f=[]
+    for i in range(n):
+        j=(i+1)%n
+        f += [(i,j,n+j),(i,n+j,n+i)]                         # outer wall
+        f += [(2*n+i,3*n+j,2*n+j),(2*n+i,3*n+i,3*n+j)]       # inner wall
+        f += [(i,2*n+j,j),(i,2*n+i,2*n+j)]                   # -Z annulus
+        f += [(n+i,n+j,3*n+j),(n+i,3*n+j,3*n+i)]             # +Z annulus
+    return v,f
+
+def bidirectional_rimmed_plate(poly,separator,inset,z0,z1,inset_material):
+    """Three closed, depth-separated opaque solids styled identically on ±Z."""
+    outer=list(poly); separator=list(separator); inset=list(inset)
+    if polygon_area(outer)<0: outer.reverse()
+    if polygon_area(separator)<0: separator.reverse()
+    if polygon_area(inset)<0: inset.reverse()
+    epsilon=.002
+    return [
+        (*closed_frame(outer,separator,z0,z1),"white"),
+        (*closed_frame(separator,inset,z0+epsilon,z1-epsilon),"charcoal"),
+        (*extrude(inset,z0+2*epsilon,z1-2*epsilon),inset_material),
+    ]
 
 def box(x0,x1,y0,y1,z0,z1):
     v=[(x0,y0,z0),(x1,y0,z0),(x1,y1,z0),(x0,y1,z0),(x0,y0,z1),(x1,y0,z1),(x1,y1,z1),(x0,y1,z1)]
@@ -189,7 +219,9 @@ def build_geometry(role):
         return names.index(n)
     if role=="directional-arrow":
         p=[(-.16,-.39),(.16,-.39),(.16,.05),(.39,.05),(0,.39),(-.39,.05),(-.16,.05)]
-        for cv,cf,m in rimmed_plate(p,-.09,.09,.88,.74,"tint_base"):
+        separator=[(-.135,-.36),(.135,-.36),(.135,.08),(.31,.08),(0,.335),(-.31,.08),(-.135,.08)]
+        inset=[(-.105,-.32),(.105,-.32),(.105,.115),(.235,.115),(0,.275),(-.235,.115),(-.105,.115)]
+        for cv,cf,m in bidirectional_rimmed_plate(p,separator,inset,-.09,.09,"tint_base"):
             add_comp(v,f,mi,cv,cf,matn(m))
     elif role=="any-note":
         p=[(.35*math.cos(2*math.pi*i/24),.35*math.sin(2*math.pi*i/24)) for i in range(24)]
@@ -296,13 +328,18 @@ def export_asset(root,spec):
     reset(); obj=make_asset(spec); role=spec["role"]; variant=spec["variant"]
     src=root/"source"/role/variant/(variant+".blend"); src.parent.mkdir(parents=True,exist_ok=True)
     bpy.context.view_layer.objects.active=obj; obj.select_set(True)
-    # Preserve the five unchanged editable snapshots byte-for-byte in the canonical
+    # Preserve six unchanged editable snapshots byte-for-byte in the canonical
     # checkout. Clean temporary builds still receive a complete seven-source shape.
     if not src.exists() or role in CHANGED_SOURCE_ROLES:
         bpy.context.preferences.filepaths.save_version=0
         bpy.ops.wm.save_as_mainfile(filepath=str(src),compress=False,check_existing=False)
     out=root/"release"/"raw"/VERSION/role/(variant+".glb")
-    names=[m.name.removeprefix("mat/") for m in obj.data.materials]; write_glb(out,obj,names)
+    names=[m.name.removeprefix("mat/") for m in obj.data.materials]
+    if role in CHANGED_SOURCE_ROLES:
+        write_glb(out,obj,names)
+    else:
+        predecessor=root/"release"/"raw"/PREDECESSOR_RELEASE/role/(variant+".glb")
+        out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(predecessor.read_bytes())
     aabb,tris=measured(obj)
     return src,out,aabb,tris,[m.name for m in obj.data.materials]
 
@@ -457,21 +494,40 @@ def review(root):
             track=import_review_mesh(tp,f"compare/{release}/{bg}/track")
             track.location=(x,y-.10,.05); track.scale=(.70,.70,.07); track.rotation_euler=(math.radians(72),0,0)
             compare += [("directional-arrow","outline-v1",arrow,f"{release}/{bg}/arrow",release),("track","blue-glass-v1",track,f"{release}/{bg}/track",release)]
-            alpha="arrow A=1 OPAQUE | track A="+("0.20 BLEND" if release==PREDECESSOR_RELEASE else "0.52 BLEND")
+            alpha="arrow A=1 OPAQUE | track A=0.52 BLEND"
             labels.append(add_label(alpha,(x,y-.66,-.26),.135))
     old_arrow=sha(predecessor_root/"release"/"raw"/PREDECESSOR_RELEASE/"directional-arrow"/"outline-v1.glb")
     old_track=sha(predecessor_root/"release"/"raw"/PREDECESSOR_RELEASE/"track"/"blue-glass-v1.glb")
     new_arrow=sha(root/"release"/"raw"/VERSION/"directional-arrow"/"outline-v1.glb")
     new_track=sha(root/"release"/"raw"/VERSION/"track"/"blue-glass-v1.glb")
-    labels.append(add_label("OPAQUE ARROW + 2.6x STRONGER BLUE-GLASS TRACK | ACTUAL GLBs | SAME GAMEPLAY FRAMING",(0,3.78,-.24),.22))
-    labels.append(add_label("COUNTS EACH RELEASE: 3 ARROWS + 3 TRACKS | GEOMETRY UNCHANGED: ARROW 0.78x0.78x0.18 / 71 tris; TRACK 4.20x0.06x24.00 / 60 tris",(0,-3.18,-.24),.14))
-    labels.append(add_label("0.0.2 SHA256 arrow "+old_arrow+" | track "+old_track,(0,-3.46,-.24),.105))
-    labels.append(add_label("0.0.3 SHA256 arrow "+new_arrow+" | track "+new_track,(0,-3.68,-.24),.105))
+    labels.append(add_label("BIDIRECTIONAL OPAQUE ARROW | ACTUAL GLBs | SAME -Z REVIEW FRAMING",(0,3.78,-.24),.22))
+    labels.append(add_label("COUNTS EACH RELEASE: 3 ARROWS + 3 TRACKS | ARROW 0.78x0.78x0.18 / 136 tris; TRACK UNCHANGED 4.20x0.06x24.00 / 60 tris",(0,-3.18,-.24),.14))
+    labels.append(add_label(PREDECESSOR_RELEASE+" SHA256 arrow "+old_arrow+" | track "+old_track,(0,-3.46,-.24),.105))
+    labels.append(add_label(VERSION+" SHA256 arrow "+new_arrow+" | track "+new_track,(0,-3.68,-.24),.105))
     camera,_=fit_camera([x[2] for x in compare]+panels+labels,direction=(0,0,-1),margin=.035,lens=52,orthographic=True)
     p=rd/"visibility-comparison.png"; render(p); images.append(p)
     layouts[p.name]={"kind":"visibility-comparison","minimum_margin":.035,"backgrounds":[x[0] for x in rows],"counts_per_release":{"directional-arrow":3,"track":3},"objects":[layout_entry(camera,r,v,o,n,release) for r,v,o,n,release in compare]}
-    visibility={"schema":"aerobeat.visibility-review/v1","release":VERSION,"predecessor":PREDECESSOR_RELEASE,"image":"visibility-comparison.png","backgrounds":[x[0] for x in rows],"camera":"consistent gameplay-facing mini-scenes; actual release GLBs","counts_per_release":{"directional-arrow":3,"track":3},"geometry":{"directional-arrow":{"dimensions":[.78,.78,.18],"triangles":71},"track":{"dimensions":[4.2,.06,24.0],"triangles":60}},"materials":{"0.0.2":{"directional-arrow":{"alpha":1.0,"alpha_mode":"implicit OPAQUE","core":"cyan"},"track":{"alpha":.20,"alpha_mode":"BLEND"}},"0.0.3":{"directional-arrow":{"alpha":1.0,"alpha_mode":"OPAQUE","blend":"opaque","cull":"back","depth_test":True,"depth_write":True,"outline":"white","runtime_tint_targets":["red","yellow","green"]},"track":{"alpha":.52,"alpha_mode":"BLEND","blend":"alpha","cull":"back","depth_test":True,"depth_write":False,"order":"after-grid-before-wall","opacity_multiplier":2.6}}},"glb_sha256":{"0.0.2":{"directional-arrow":old_arrow,"track":old_track},"0.0.3":{"directional-arrow":new_arrow,"track":new_track}}}
+    _,_,_,_=old_track,new_track,old_arrow,new_arrow
+    visibility={"schema":"aerobeat.visibility-review/v1","release":VERSION,"predecessor":PREDECESSOR_RELEASE,"image":"visibility-comparison.png","backgrounds":[x[0] for x in rows],"camera":"consistent -Z review-facing mini-scenes; actual release GLBs","counts_per_release":{"directional-arrow":3,"track":3},"geometry":{"directional-arrow":{"dimensions":[.78,.78,.18],"triangles":136},"track":{"dimensions":[4.2,.06,24.0],"triangles":60}},"materials":{PREDECESSOR_RELEASE:{"directional-arrow":{"alpha":1.0,"alpha_mode":"OPAQUE","runtime_face":"unstyled +Z coplanar caps"},"track":{"alpha":.52,"alpha_mode":"BLEND"}},VERSION:{"directional-arrow":{"alpha":1.0,"alpha_mode":"OPAQUE","blend":"opaque","cull":"back","depth_test":True,"depth_write":True,"outline":"white on +Z and -Z","runtime_tint_targets":["red","yellow","green"]},"track":{"alpha":.52,"alpha_mode":"BLEND","blend":"alpha","cull":"back","depth_test":True,"depth_write":False,"order":"after-grid-before-wall","opacity_multiplier":2.6}}},"glb_sha256":{PREDECESSOR_RELEASE:{"directional-arrow":old_arrow,"track":old_track},VERSION:{"directional-arrow":new_arrow,"track":new_track}}}
     write_json(rd/"visibility.v1.json",visibility)
+    # Runtime camera reads +Z while legacy review cameras read -Z. Render both actual
+    # faces independently against the same bright analytic ice background.
+    face_images=[]
+    arrow_spec=roles["directional-arrow"]
+    for face,direction in (("plus-z",(0,0,1)),("minus-z",(0,0,-1))):
+        reset(); setup_render(COLORS["bright_ice"][0]); o=add_review_asset(arrow_spec,instance=f"directional-arrow/{face}-bright")
+        camera,_=fit_camera([o],direction=direction,margin=.16,lens=58)
+        p=rd/f"directional-arrow--outline-v1--{face}-bright.png"; render(p); images.append(p); face_images.append(p.name)
+        layouts[p.name]={"kind":"directional-arrow-face-contrast","camera_face":face,"background":"BRIGHT ICE","minimum_margin":.16,"objects":[layout_entry(camera,"directional-arrow","outline-v1",o,f"directional-arrow/{face}-bright")]}
+    def linear_luminance(rgb):
+        channels=[c/12.92 if c<=.04045 else ((c+.055)/1.055)**2.4 for c in rgb]
+        return .2126*channels[0]+.7152*channels[1]+.0722*channels[2]
+    def contrast(a,b):
+        x,y=linear_luminance(a),linear_luminance(b)
+        return round((max(x,y)+.05)/(min(x,y)+.05),6)
+    bright=COLORS["bright_ice"][0][:3]; white=COLORS["white"][0][:3]; charcoal=COLORS["charcoal"][0][:3]
+    contrast_evidence={"schema":"aerobeat.directional-arrow-contrast/v1","release":VERSION,"background":"BRIGHT ICE","images":face_images,"camera_faces":["plus-z","minus-z"],"materials":{"alpha":1.0,"alpha_mode":"OPAQUE","depth_test":True,"depth_write":True,"analytic_only":True},"structural_depths":{"white_outer_faces":[-.09,.09],"charcoal_separator_faces":[-.088,.088],"tint_core_faces":[-.086,.086],"coplanar_overlapping_caps":False},"analytic_contrast":{"white_vs_charcoal":contrast(white,charcoal),"charcoal_vs_bright_ice":contrast(charcoal,bright),"minimum_required":7.0},"screen_directions":{"camera_face":"plus-z","renderer_y_flip":False,"local_base_vector":[0,1],"rotation_degrees":SCREEN_DIRECTIONS}}
+    write_json(rd/"contrast.v1.json",contrast_evidence)
     # Calculated, safe-margin individual three-quarter views.
     for s in ASSETS:
         reset(); setup_render(); o=add_review_asset(s,rotation=(0,math.radians(58),0) if s["role"]=="track" else (0,0,0),instance=s["role"]+"/individual")
@@ -480,7 +536,7 @@ def review(root):
         p=rd/(s["role"]+"--"+s["variant"]+".png"); render(p); images.append(p)
         layouts[p.name]={"kind":"individual","minimum_margin":.12,"objects":[layout_entry(camera,s["role"],s["variant"],o,s["role"]+"/individual")]}
     write_json(rd/"layout.v1.json",{"schema":"aerobeat.review-layout/v1","release":VERSION,"resolution":[1600,900],"images":layouts})
-    write_json(rd/"hashes.v1.json",{"schema":"aerobeat.review-hashes/v1","release":VERSION,"resolution":[1600,900],"renderer":"Blender 4.0.2 EEVEE","files":[{"path":p.name,"bytes":p.stat().st_size,"sha256":sha(p)} for p in sorted(images)],"layout":{"path":"layout.v1.json","bytes":(rd/"layout.v1.json").stat().st_size,"sha256":sha(rd/"layout.v1.json")},"visibility":{"path":"visibility.v1.json","bytes":(rd/"visibility.v1.json").stat().st_size,"sha256":sha(rd/"visibility.v1.json")}})
+    write_json(rd/"hashes.v1.json",{"schema":"aerobeat.review-hashes/v1","release":VERSION,"resolution":[1600,900],"renderer":"Blender 4.0.2 EEVEE","files":[{"path":p.name,"bytes":p.stat().st_size,"sha256":sha(p)} for p in sorted(images)],"layout":{"path":"layout.v1.json","bytes":(rd/"layout.v1.json").stat().st_size,"sha256":sha(rd/"layout.v1.json")},"visibility":{"path":"visibility.v1.json","bytes":(rd/"visibility.v1.json").stat().st_size,"sha256":sha(rd/"visibility.v1.json")},"contrast":{"path":"contrast.v1.json","bytes":(rd/"contrast.v1.json").stat().st_size,"sha256":sha(rd/"contrast.v1.json")}})
 
 def glb_json(path):
     b=path.read_bytes(); magic,ver,total=struct.unpack_from("<4sII",b,0); assert magic==b"glTF" and ver==2 and total==len(b)
@@ -493,7 +549,9 @@ def material_manifest(role,names):
             "opacity":1.0,"alpha_mode":"OPAQUE","blend":"opaque","double_sided":False,
             "cull":"back","depth_test":True,"depth_write":True,
             "white_outline_material":"mat/white","runtime_tint_material":"mat/tint_base",
-            "runtime_tint_targets":["red","yellow","green"]}
+            "runtime_tint_targets":["red","yellow","green"],"styled_faces":["+Z","-Z"],
+            "coplanar_overlapping_caps":False,"renderer_y_flip":False,
+            "screen_direction_rotation_degrees":SCREEN_DIRECTIONS}
     elif role=="track":
         result["contract"]={
             "opacity":0.52,"predecessor_opacity":0.20,"opacity_multiplier":2.6,
@@ -517,7 +575,7 @@ def main():
           "names":{"node":s["role"]+"/"+s["variant"],"mesh":s["role"]+"/"+s["variant"]+"/mesh","materials":mats},
           "source_authority":{"generator":"tools/generate.py","blend_byte_determinism_claimed":False,"note":"The tracked .blend is an editable binary snapshot; deterministic generator code is authoritative."},
           "geometry":{"dimensions":s["dimensions"],"measured_aabb":aabb,"pivot":s["pivot"],"object_origin":[0,0,0],"rotation_euler":[0,0,0],"scale":[1,1,1],"triangle_count":tris,"triangle_budget":s["budget"],"collision_free_bound":s["bound"]},
-          "coordinates":{"handedness":"right","up":"+Y","forward":"-Z","visible_face":"-Z" if s["role"] in ("directional-arrow","any-note","guard") else "not-applicable"},
+          "coordinates":{"handedness":"right","up":"+Y","forward":"-Z","visible_face":"both +Z/-Z" if s["role"]=="directional-arrow" else ("-Z" if s["role"] in ("any-note","guard") else "not-applicable")},
           "materials":material_manifest(s["role"],mats),"reuse":s["reuse"],
           "rights":{"license":"CC-BY-NC-4.0","creator":"AeroBeat / Gambit Games","third_party_content":False},
           "provenance":{"method":"locally authored deterministic procedural primitives","generator":GENERATOR,"blender":BLENDER,"external_assets":[],"network":False},
@@ -534,7 +592,7 @@ def main():
         if p.is_file(): payload.append({"path":p.relative_to(rel).as_posix(),"bytes":p.stat().st_size,"sha256":sha(p)})
     inv={"schema":"aerobeat.release-inventory/v1","release":VERSION,"immutable":True,"expected_asset_count":7,"payload":payload}
     write_json(rel/"inventory.v1.json",inv)
-    proof={"schema":"aerobeat.release-proof/v1","release":VERSION,"inventory_sha256":sha(rel/"inventory.v1.json"),"generator":GENERATOR,"blender":BLENDER,"determinism":{"scope":"every file under release/raw/%s"%VERSION,"method":"primary plus two clean temporary byte comparisons","blend_snapshots_in_scope":False},"blend_snapshot_limitation":"Blender .blend container bytes are not claimed deterministic; tracked editable snapshots are subordinate to tools/generate.py.","claims":{"separate_glbs":True,"combined_glb":False,"analytic_materials_only":True,"textures":0,"external_dependencies":0,"canonical_shields":1,"guard_instances_required":2,"directional_arrow":{"opacity":1.0,"alpha_mode":"OPAQUE","depth_write":True,"runtime_tint_targets":["red","yellow","green"]},"track":{"opacity":0.52,"predecessor_opacity":0.20,"opacity_multiplier":2.6,"alpha_mode":"BLEND","depth_write":False,"order":"after-grid-before-wall"}}}
+    proof={"schema":"aerobeat.release-proof/v1","release":VERSION,"inventory_sha256":sha(rel/"inventory.v1.json"),"generator":GENERATOR,"blender":BLENDER,"determinism":{"scope":"every file under release/raw/%s"%VERSION,"method":"primary plus two clean temporary byte comparisons","blend_snapshots_in_scope":False},"blend_snapshot_limitation":"Blender .blend container bytes are not claimed deterministic; tracked editable snapshots are subordinate to tools/generate.py.","claims":{"separate_glbs":True,"combined_glb":False,"analytic_materials_only":True,"textures":0,"external_dependencies":0,"canonical_shields":1,"guard_instances_required":2,"directional_arrow":{"opacity":1.0,"alpha_mode":"OPAQUE","depth_test":True,"depth_write":True,"styled_faces":["+Z","-Z"],"coplanar_overlapping_caps":False,"renderer_y_flip":False,"runtime_tint_targets":["red","yellow","green"],"screen_direction_rotation_degrees":SCREEN_DIRECTIONS},"track":{"opacity":0.52,"predecessor_opacity":0.20,"opacity_multiplier":2.6,"alpha_mode":"BLEND","depth_write":False,"order":"after-grid-before-wall"}}}
     write_json(rel/"proof.v1.json",proof)
     review(root)
     expected_release={"inventory.v1.json","proof.v1.json","sets/default-v1.json"}
@@ -549,13 +607,13 @@ def main():
     actual_manifests={p.relative_to(root/"manifests").as_posix() for p in (root/"manifests").rglob("*") if p.is_file()}
     review_dir=root/"review"/VERSION
     actual_review_pngs={p.name for p in review_dir.glob("*.png")}
-    expected_review_pngs={"neutral-board.png","gameplay-context.png","visibility-comparison.png"}|{s["role"]+"--"+s["variant"]+".png" for s in ASSETS}
+    expected_review_pngs={"neutral-board.png","gameplay-context.png","visibility-comparison.png","directional-arrow--outline-v1--plus-z-bright.png","directional-arrow--outline-v1--minus-z-bright.png"}|{s["role"]+"--"+s["variant"]+".png" for s in ASSETS}
     actual_review_metadata={p.name for p in review_dir.glob("*.json")}
     if actual_release!=expected_release: raise RuntimeError(f"generation release postcondition mismatch: {sorted(actual_release)}")
     if actual_sources!=expected_sources: raise RuntimeError(f"generation source postcondition mismatch: {sorted(actual_sources)}")
     if actual_manifests!=expected_manifests: raise RuntimeError(f"generation manifest postcondition mismatch: {sorted(actual_manifests)}")
-    if actual_review_pngs!=expected_review_pngs or actual_review_metadata!={"hashes.v1.json","layout.v1.json","visibility.v1.json"}: raise RuntimeError("generation review postcondition mismatch")
+    if actual_review_pngs!=expected_review_pngs or actual_review_metadata!={"hashes.v1.json","layout.v1.json","visibility.v1.json","contrast.v1.json"}: raise RuntimeError("generation review postcondition mismatch")
     if {p.name for p in (root/"sets").glob("*.json")}!={"default-v1.json"}: raise RuntimeError("generation set postcondition mismatch")
-    print("GENERATE_OK release=0.0.3 assets=7 sources=7 manifests=7 release_files=17 review_pngs=10 review_metadata=3")
+    print("GENERATE_OK release=0.0.4 assets=7 sources=7 manifests=7 release_files=17 review_pngs=12 review_metadata=4")
 
 if __name__=="__main__": main()
