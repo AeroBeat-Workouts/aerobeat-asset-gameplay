@@ -13,19 +13,19 @@ import bpy
 from bpy_extras.object_utils import world_to_camera_view
 from mathutils import Vector
 
-SUPPORTED_RELEASE = "0.0.4"
-PREDECESSOR_RELEASE = "0.0.3"
+SUPPORTED_RELEASE = "0.0.5"
+PREDECESSOR_RELEASE = "0.0.4"
 VERSION = None
 BLENDER = "4.0.2"
-GENERATOR = "aerobeat-gameplay-generator-v3"
-CHANGED_SOURCE_ROLES = {"directional-arrow"}
+GENERATOR = "aerobeat-gameplay-generator-v4"
+CHANGED_SOURCE_ROLES = {"wall"}
 
 ASSETS = [
     dict(role="directional-arrow", variant="outline-v1", dimensions=[0.78,0.78,0.18], pivot=[0,0,0], budget=420, bound=[[-0.42,-0.42,-0.11],[0.42,0.42,0.11]], reuse="one mesh for Flow and Boxing; rotate only about local Z"),
     dict(role="any-note", variant="circle-v1", dimensions=[0.70,0.70,0.18], pivot=[0,0,0], budget=320, bound=[[-0.38,-0.38,-0.11],[0.38,0.38,0.11]], reuse="one directionless mesh across applicable modes"),
     dict(role="guard", variant="shield-v1", dimensions=[0.72,0.82,0.16], pivot=[0,0,0.07], budget=520, bound=[[-0.39,-0.44,-0.10],[0.39,0.44,0.10]], reuse="exactly one canonical shield; instance twice simultaneously without mirroring or material/scale variation"),
     dict(role="bomb", variant="urchin-v1", dimensions=[0.78,0.78,0.78], pivot=[0,0,0], budget=900, bound=[[-0.42,-0.42,-0.42],[0.42,0.42,0.42]], reuse="one bomb mesh for every bomb event"),
-    dict(role="wall", variant="red-glass-v1", dimensions=[1.80,1.90,1.00], pivot=[0,0,0], budget=144, bound=[[-0.94,-0.99,-0.54],[0.94,0.99,0.54]], reuse="unit interval source; scale only Z to authoritative L=max(0.08,speedWorldUnitsPerMs*(endTimestampMs-centerTimestampMs))"),
+    dict(role="wall", variant="red-glass-v1", dimensions=[0.94,0.94,1.00], pivot=[0,0,0], budget=144, bound=[[-0.47,-0.47,-0.50],[0.47,0.47,0.50]], reuse="one canonical 0.94 x 0.94 cell footprint at unit X/Y scale; scale only Z to authoritative L=max(0.08,speedWorldUnitsPerMs*(endTimestampMs-centerTimestampMs)); adjacent 1.0-pitch cells retain a 0.06 gap"),
     dict(role="track", variant="blue-glass-v1", dimensions=[4.20,0.06,24.00], pivot=[0,0.03,0], budget=160, bound=[[-2.14,-0.04,-12.04],[2.14,0.08,12.04]], reuse="one canonical segment; extend by deterministic segment reuse, never stretch lane-line width"),
     dict(role="athlete-marker", variant="sphere-v1", dimensions=[0.18,0.18,0.18], pivot=[0,0,0], budget=192, bound=[[-0.10,-0.10,-0.10],[0.10,0.10,0.10]], reuse="same full 3D sphere for nose and both wrists; truthful world positions and normal depth"),
 ]
@@ -242,17 +242,18 @@ def build_geometry(role):
             q=Vector(d).normalized(); cv,cf=cone_between(q*.19,q*.39,.052,8); add_comp(v,f,mi,cv,cf,matn("charcoal"))
         cv,cf=torus(.225,.012); add_comp(v,f,mi,cv,cf,matn("red_emissive"))
     elif role=="wall":
-        cv,cf=box(-.9,.9,-.95,.95,-.5,.5); add_comp(v,f,mi,cv,cf,matn("red_glass"))
+        half=.47
+        cv,cf=box(-half,half,-half,half,-.5,.5); add_comp(v,f,mi,cv,cf,matn("red_glass"))
         # Twelve square-prism edges: exactly 96 edge triangles plus 12 body triangles.
         t=.018
         edges=[]
-        # Cage prisms remain inside the exact 1.80 x 1.90 x 1.00 source extent.
-        for y in (-.95+t,.95-t):
-            for z in (-.5+t,.5-t): edges.append((-.9,.9,y,y,z,z,"x"))
-        for x in (-.9+t,.9-t):
-            for z in (-.5+t,.5-t): edges.append((x,x,-.95,.95,z,z,"y"))
-        for x in (-.9+t,.9-t):
-            for y in (-.95+t,.95-t): edges.append((x,x,y,y,-.5,.5,"z"))
+        # Cage prisms remain inside the exact 0.94 x 0.94 x 1.00 source extent.
+        for y in (-half+t,half-t):
+            for z in (-.5+t,.5-t): edges.append((-half,half,y,y,z,z,"x"))
+        for x in (-half+t,half-t):
+            for z in (-.5+t,.5-t): edges.append((x,x,-half,half,z,z,"y"))
+        for x in (-half+t,half-t):
+            for y in (-half+t,half-t): edges.append((x,x,y,y,-.5,.5,"z"))
         for x0,x1,y0,y1,z0,z1,axis in edges:
             if axis=="x": cv,cf=box(x0,x1,y0-t,y0+t,z0-t,z0+t)
             elif axis=="y": cv,cf=box(x0-t,x0+t,y0,y1,z0-t,z0+t)
@@ -316,6 +317,8 @@ def write_glb(path,obj,material_names):
             m["extras"]={"aerobeat":{"blend":"opaque","cull":"back","depthTest":True,"depthWrite":True,"runtimeTintable":name=="tint_base"}}
         elif role=="track":
             m["extras"]={"aerobeat":{"blend":"alpha" if blend=="BLEND" else "opaque","cull":"back","depthTest":True,"depthWrite":False if blend=="BLEND" else True,"order":"after-grid-before-wall"}}
+        elif role=="wall":
+            m["extras"]={"aerobeat":{"blend":"alpha","cull":"back","depthTest":True,"depthWrite":False,"order":"after-track","unitCellFootprint":[0.94,0.94],"xyScaleAuthoritative":[1,1],"zScaleAuthoritative":True}}
         materials.append(m)
     doc={"asset":{"generator":GENERATOR,"version":"2.0"},"scene":0,"scenes":[{"nodes":[0]}],"nodes":[{"mesh":0,"name":obj.name}],"meshes":[{"name":obj.data.name,"primitives":primitives}],"materials":materials,"buffers":[{"byteLength":len(binary)}],"bufferViews":views,"accessors":accessors}
     js=json.dumps(doc,sort_keys=True,separators=(",",":"),ensure_ascii=False).encode("utf-8")
@@ -475,6 +478,26 @@ def review(root):
     t=add_label(text,overlay_center+up*.20,.013); t.data.space_line=1.15; t.rotation_euler=cam_q; t.location-=right*.0
     p=rd/"gameplay-context.png"; render(p); images.append(p)
     layouts[p.name]={"kind":"gameplay-context","minimum_margin":.10,"required_counts":{"directional-arrow":1,"any-note":1,"guard":2,"bomb":1,"wall":1,"track":1,"athlete-marker":3},"objects":[layout_entry(camera,s["role"],s["variant"],o,n) for s,o,n in context]}
+    # Canonical one-cell and adjacent-cell wall proof. Grid centers use exact 1.0
+    # pitch, both cell faces and wall sources are exact 0.94 squares, and the
+    # visible 0.06 pitch gap remains unobstructed. Geometry is local analytic art.
+    reset(); setup_render((.035,.055,.085,1)); wall_grid=[]; cells=[]; labels=[]
+    wall_path=root/"release"/"raw"/VERSION/"wall"/"red-glass-v1.glb"
+    for row_y,row_name in ((1.1,"ONE CELL"),(-1.1,"THREE ADJACENT CELLS")):
+        centers=(0,) if row_name=="ONE CELL" else (-1,0,1)
+        for x in centers:
+            cv,cf=box(x-.47,x+.47,row_y-.47,row_y+.47,-.535,-.52)
+            mesh=bpy.data.meshes.new(f"review/cell/{row_name}/{x}/mesh"); mesh.from_pydata(cv,[],cf); mesh.materials.append(material("blue_ice")); mesh.update()
+            cell=bpy.data.objects.new(f"review/cell/{row_name}/{x}",mesh); bpy.context.collection.objects.link(cell); cells.append(cell)
+            wall=import_review_mesh(wall_path,f"wall-grid/{row_name}/{x}"); wall.location=(x,row_y,0); wall_grid.append((wall,row_name,x))
+        labels.append(add_label(row_name,(0,row_y-.76,-.64),.18))
+    labels.append(add_label("WALL 0.94 x 0.94 | CELL 0.94 x 0.94 | PITCH 1.00 | GAP 0.06",(0,2.18,-.64),.24))
+    labels.append(add_label("UNIT X/Y SCALE | CENTERED PIVOT | AUTHORITATIVE Z SCALE ONLY",(0,-2.20,-.64),.18))
+    camera,_=fit_camera([x[0] for x in wall_grid]+cells+labels,direction=(0,0,-1),margin=.08,lens=56)
+    p=rd/"wall-grid-comparison.png"; render(p); images.append(p)
+    layouts[p.name]={"kind":"wall-grid-comparison","minimum_margin":.08,"objects":[layout_entry(camera,"wall","red-glass-v1",o,f"wall/{name}/{x}") for o,name,x in wall_grid]}
+    wall_grid_evidence={"schema":"aerobeat.wall-grid-review/v1","release":VERSION,"image":p.name,"source_dimensions":[.94,.94,1.0],"measured_source_aabb":[[-.47,-.47,-.5],[.47,.47,.5]],"canonical_cell_dimensions":[.94,.94],"cell_pitch":[1.0,1.0],"adjacent_gap":[.06,.06],"pivot":[0,0,0],"xy_scale":[1,1],"z_scale":"authoritative interval only","rows":[{"name":"one-cell","centers":[[0,1.1]],"overlap":False},{"name":"adjacent-cells","centers":[[-1,-1.1],[0,-1.1],[1,-1.1]],"overlap":False}],"materials":{"analytic_only":True,"body":"mat/red_glass","edge":"mat/red_edge","depth_test":True,"depth_write":False,"order":"after-track"},"glb_sha256":sha(wall_path)}
+    write_json(rd/"wall-grid.v1.json",wall_grid_evidence)
     # Truthful predecessor/current GLB comparison in consistent gameplay-facing cells.
     # Backgrounds are locally authored analytic panels, never runtime/environment art.
     reset(); setup_render(); compare=[]; panels=[]; labels=[]
@@ -536,7 +559,7 @@ def review(root):
         p=rd/(s["role"]+"--"+s["variant"]+".png"); render(p); images.append(p)
         layouts[p.name]={"kind":"individual","minimum_margin":.12,"objects":[layout_entry(camera,s["role"],s["variant"],o,s["role"]+"/individual")]}
     write_json(rd/"layout.v1.json",{"schema":"aerobeat.review-layout/v1","release":VERSION,"resolution":[1600,900],"images":layouts})
-    write_json(rd/"hashes.v1.json",{"schema":"aerobeat.review-hashes/v1","release":VERSION,"resolution":[1600,900],"renderer":"Blender 4.0.2 EEVEE","files":[{"path":p.name,"bytes":p.stat().st_size,"sha256":sha(p)} for p in sorted(images)],"layout":{"path":"layout.v1.json","bytes":(rd/"layout.v1.json").stat().st_size,"sha256":sha(rd/"layout.v1.json")},"visibility":{"path":"visibility.v1.json","bytes":(rd/"visibility.v1.json").stat().st_size,"sha256":sha(rd/"visibility.v1.json")},"contrast":{"path":"contrast.v1.json","bytes":(rd/"contrast.v1.json").stat().st_size,"sha256":sha(rd/"contrast.v1.json")}})
+    write_json(rd/"hashes.v1.json",{"schema":"aerobeat.review-hashes/v1","release":VERSION,"resolution":[1600,900],"renderer":"Blender 4.0.2 EEVEE","files":[{"path":p.name,"bytes":p.stat().st_size,"sha256":sha(p)} for p in sorted(images)],"layout":{"path":"layout.v1.json","bytes":(rd/"layout.v1.json").stat().st_size,"sha256":sha(rd/"layout.v1.json")},"visibility":{"path":"visibility.v1.json","bytes":(rd/"visibility.v1.json").stat().st_size,"sha256":sha(rd/"visibility.v1.json")},"contrast":{"path":"contrast.v1.json","bytes":(rd/"contrast.v1.json").stat().st_size,"sha256":sha(rd/"contrast.v1.json")},"wall_grid":{"path":"wall-grid.v1.json","bytes":(rd/"wall-grid.v1.json").stat().st_size,"sha256":sha(rd/"wall-grid.v1.json")}})
 
 def glb_json(path):
     b=path.read_bytes(); magic,ver,total=struct.unpack_from("<4sII",b,0); assert magic==b"glTF" and ver==2 and total==len(b)
@@ -558,6 +581,12 @@ def material_manifest(role,names):
             "alpha_mode":"BLEND","blend":"alpha","double_sided":False,"cull":"back",
             "depth_test":True,"depth_write":False,"order":"after-grid-before-wall",
             "justification":"0.52 is 2.6x stronger than 0.20 and remains translucent blue glass over bright ice."}
+    elif role=="wall":
+        result["contract"]={
+            "body_opacity":0.24,"edge_opacity":0.82,"alpha_mode":"BLEND","blend":"alpha",
+            "double_sided":False,"cull":"back","depth_test":True,"depth_write":False,
+            "order":"after-track","unit_cell_footprint":[0.94,0.94],"cell_pitch":[1.0,1.0],
+            "adjacent_gap":[0.06,0.06],"xy_scale_authoritative":[1,1],"z_scale_authoritative":True}
     return result
 
 def main():
@@ -592,7 +621,7 @@ def main():
         if p.is_file(): payload.append({"path":p.relative_to(rel).as_posix(),"bytes":p.stat().st_size,"sha256":sha(p)})
     inv={"schema":"aerobeat.release-inventory/v1","release":VERSION,"immutable":True,"expected_asset_count":7,"payload":payload}
     write_json(rel/"inventory.v1.json",inv)
-    proof={"schema":"aerobeat.release-proof/v1","release":VERSION,"inventory_sha256":sha(rel/"inventory.v1.json"),"generator":GENERATOR,"blender":BLENDER,"determinism":{"scope":"every file under release/raw/%s"%VERSION,"method":"primary plus two clean temporary byte comparisons","blend_snapshots_in_scope":False},"blend_snapshot_limitation":"Blender .blend container bytes are not claimed deterministic; tracked editable snapshots are subordinate to tools/generate.py.","claims":{"separate_glbs":True,"combined_glb":False,"analytic_materials_only":True,"textures":0,"external_dependencies":0,"canonical_shields":1,"guard_instances_required":2,"directional_arrow":{"opacity":1.0,"alpha_mode":"OPAQUE","depth_test":True,"depth_write":True,"styled_faces":["+Z","-Z"],"coplanar_overlapping_caps":False,"renderer_y_flip":False,"runtime_tint_targets":["red","yellow","green"],"screen_direction_rotation_degrees":SCREEN_DIRECTIONS},"track":{"opacity":0.52,"predecessor_opacity":0.20,"opacity_multiplier":2.6,"alpha_mode":"BLEND","depth_write":False,"order":"after-grid-before-wall"}}}
+    proof={"schema":"aerobeat.release-proof/v1","release":VERSION,"inventory_sha256":sha(rel/"inventory.v1.json"),"generator":GENERATOR,"blender":BLENDER,"determinism":{"scope":"every file under release/raw/%s"%VERSION,"method":"primary plus two clean temporary byte comparisons","blend_snapshots_in_scope":False},"blend_snapshot_limitation":"Blender .blend container bytes are not claimed deterministic; tracked editable snapshots are subordinate to tools/generate.py.","claims":{"separate_glbs":True,"combined_glb":False,"analytic_materials_only":True,"textures":0,"external_dependencies":0,"canonical_shields":1,"guard_instances_required":2,"directional_arrow":{"opacity":1.0,"alpha_mode":"OPAQUE","depth_test":True,"depth_write":True,"styled_faces":["+Z","-Z"],"coplanar_overlapping_caps":False,"renderer_y_flip":False,"runtime_tint_targets":["red","yellow","green"],"screen_direction_rotation_degrees":SCREEN_DIRECTIONS},"track":{"opacity":0.52,"predecessor_opacity":0.20,"opacity_multiplier":2.6,"alpha_mode":"BLEND","depth_write":False,"order":"after-grid-before-wall"},"wall":{"source_dimensions":[0.94,0.94,1.0],"unit_cell_footprint":[0.94,0.94],"cell_pitch":[1.0,1.0],"adjacent_gap":[0.06,0.06],"xy_scale_authoritative":[1,1],"z_scale_authoritative":True,"centered_pivot":True,"closed_body":True,"adjacent_instances_overlap":False}}}
     write_json(rel/"proof.v1.json",proof)
     review(root)
     expected_release={"inventory.v1.json","proof.v1.json","sets/default-v1.json"}
@@ -607,13 +636,13 @@ def main():
     actual_manifests={p.relative_to(root/"manifests").as_posix() for p in (root/"manifests").rglob("*") if p.is_file()}
     review_dir=root/"review"/VERSION
     actual_review_pngs={p.name for p in review_dir.glob("*.png")}
-    expected_review_pngs={"neutral-board.png","gameplay-context.png","visibility-comparison.png","directional-arrow--outline-v1--plus-z-bright.png","directional-arrow--outline-v1--minus-z-bright.png"}|{s["role"]+"--"+s["variant"]+".png" for s in ASSETS}
+    expected_review_pngs={"neutral-board.png","gameplay-context.png","wall-grid-comparison.png","visibility-comparison.png","directional-arrow--outline-v1--plus-z-bright.png","directional-arrow--outline-v1--minus-z-bright.png"}|{s["role"]+"--"+s["variant"]+".png" for s in ASSETS}
     actual_review_metadata={p.name for p in review_dir.glob("*.json")}
     if actual_release!=expected_release: raise RuntimeError(f"generation release postcondition mismatch: {sorted(actual_release)}")
     if actual_sources!=expected_sources: raise RuntimeError(f"generation source postcondition mismatch: {sorted(actual_sources)}")
     if actual_manifests!=expected_manifests: raise RuntimeError(f"generation manifest postcondition mismatch: {sorted(actual_manifests)}")
-    if actual_review_pngs!=expected_review_pngs or actual_review_metadata!={"hashes.v1.json","layout.v1.json","visibility.v1.json","contrast.v1.json"}: raise RuntimeError("generation review postcondition mismatch")
+    if actual_review_pngs!=expected_review_pngs or actual_review_metadata!={"hashes.v1.json","layout.v1.json","visibility.v1.json","contrast.v1.json","wall-grid.v1.json"}: raise RuntimeError("generation review postcondition mismatch")
     if {p.name for p in (root/"sets").glob("*.json")}!={"default-v1.json"}: raise RuntimeError("generation set postcondition mismatch")
-    print("GENERATE_OK release=0.0.4 assets=7 sources=7 manifests=7 release_files=17 review_pngs=12 review_metadata=4")
+    print("GENERATE_OK release=0.0.5 assets=7 sources=7 manifests=7 release_files=17 review_pngs=13 review_metadata=5")
 
 if __name__=="__main__": main()

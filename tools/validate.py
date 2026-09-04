@@ -6,8 +6,8 @@ from pathlib import Path
 
 from subprocess_contract import run_checked
 
-SUPPORTED_RELEASE="0.0.4"
-PREDECESSOR_RELEASE="0.0.3"
+SUPPORTED_RELEASE="0.0.5"
+PREDECESSOR_RELEASE="0.0.4"
 EXPECTED_LICENSE_SHA256="41003d4a74749c0220e33dd415042164b5a1093ed401f36277234f772d22d3d0"
 EXPECTED_LICENSE_BYTES=19347
 PREDECESSOR_TREES={
@@ -17,24 +17,26 @@ PREDECESSOR_TREES={
  "review/0.0.2":(11,"2ac3a84590af70569eb3fd64f3c2387878eb27f74df4effcd337f6b3e0e85528"),
  "release/raw/0.0.3":(17,"b3e7364637d363537554fe10e6e85a3ab724fe45b67ba70837547ed89f5e3afa"),
  "review/0.0.3":(13,"0540616b54e3d5d0dec5437914650b59ac7c25b475370cb8aed4c5bfca244ee6"),
+ "release/raw/0.0.4":(17,"7d2bb0e4662322869e92d7005801d250108b177171d9494dc2d6424609551b9a"),
+ "review/0.0.4":(16,"db87aac1135729d14cfbb7f3c37824f4cd04f9df604ea9fe73987912a6f08ae7"),
 }
 UNCHANGED_SOURCE_SHA256={
  "any-note/circle-v1/circle-v1.blend":"d4326da274913b454d8af9888c71295235bfd81c2c891fbbc980bea34f54365e",
  "athlete-marker/sphere-v1/sphere-v1.blend":"cab8b4099540654cd1895ef65ba88e57c62aa40ab0908f4bfbcc5a19535a15c4",
  "bomb/urchin-v1/urchin-v1.blend":"ff251ad67d6c95b4ffd1fc6fed65fb74cd94696b1dff32438b4c2b5138e4ebe9",
  "guard/shield-v1/shield-v1.blend":"f3254883e8b68802792b538bf5ffe27a9eae65fb9b18dc39eebd6f8f5863978b",
- "wall/red-glass-v1/red-glass-v1.blend":"8d77e2cbd9efa6813b792d30f1428584dc93febccbe89791d40f89b9859e2547",
  "track/blue-glass-v1/blue-glass-v1.blend":"2c2424b3d2d18bb3b49799ecfd6ed2f8810b7d469c46dc70a889a5c04c052b51",
+ "directional-arrow/outline-v1/outline-v1.blend":"ecedc0e21178830a673d4932ea932327fc1b417a6eb6023ba20a1646a1a2ae7b",
 }
 PREDECESSOR_CHANGED_SOURCE_SHA256={
- "directional-arrow/outline-v1/outline-v1.blend":"84600edfb0e9aa8e321bf13c112bc02cdbe816d24f157166464be760b63131b5",
+ "wall/red-glass-v1/red-glass-v1.blend":"8d77e2cbd9efa6813b792d30f1428584dc93febccbe89791d40f89b9859e2547",
 }
 EXPECTED={
 "directional-arrow":("outline-v1",[.78,.78,.18],[0,0,0],420),
 "any-note":("circle-v1",[.70,.70,.18],[0,0,0],320),
 "guard":("shield-v1",[.72,.82,.16],[0,0,.07],520),
 "bomb":("urchin-v1",[.78,.78,.78],[0,0,0],900),
-"wall":("red-glass-v1",[1.8,1.9,1.0],[0,0,0],144),
+"wall":("red-glass-v1",[.94,.94,1.0],[0,0,0],144),
 "track":("blue-glass-v1",[4.2,.06,24.0],[0,.03,0],160),
 "athlete-marker":("sphere-v1",[.18,.18,.18],[0,0,0],192),
 }
@@ -127,6 +129,25 @@ def assert_closed_nonoverlapping_mesh(path):
     if triangle_intersection_area(a,b)>1e-9: fail(f"{path}: coplanar overlapping caps at z={z}")
  return {str(z):len(v) for z,v in sorted(caps.items())}
 
+def assert_wall_geometry(path):
+ doc,binary=parse_glb(path); primitives=doc["meshes"][0]["primitives"]
+ if len(primitives)!=2 or [p.get("material") for p in primitives]!=[0,1]: fail(f"{path}: wall material primitive structure")
+ positions=accessor_values(doc,binary,primitives[0]["attributes"]["POSITION"]); body_indices=accessor_values(doc,binary,primitives[0]["indices"]); edges={}; caps={}
+ for i in range(0,len(body_indices),3):
+  tri=body_indices[i:i+3]; points=[positions[j] for j in tri]
+  for a,b in zip(tri,(tri[1],tri[2],tri[0])):
+   edge=tuple(sorted((a,b))); edges[edge]=edges.get(edge,0)+1
+  if max(p[2] for p in points)-min(p[2] for p in points)<=1e-7:
+   z=round(sum(p[2] for p in points)/3,6); caps.setdefault(z,[]).append([(p[0],p[1]) for p in points])
+ if len(body_indices)!=36 or any(count!=2 for count in edges.values()): fail(f"{path}: wall body is not closed two-manifold")
+ for z,triangles in caps.items():
+  for i,a in enumerate(triangles):
+   for b in triangles[i+1:]:
+    if triangle_intersection_area(a,b)>1e-9: fail(f"{path}: wall body coplanar overlap at z={z}")
+ edge_indices=accessor_values(doc,binary,primitives[1]["indices"])
+ if len(edge_indices)!=288: fail(f"{path}: wall analytic edge cage triangle structure")
+ return {"closed_body":True,"body_triangles":12,"edge_triangles":96,"coplanar_body_overlap":False}
+
 def glb_facts(path,canonical):
  d,_=parse_glb(path); nodes=d.get("nodes",[]); names=[n.get("name") for n in nodes]
  if names.count(canonical)!=1: fail(f"{path}: expected one canonical node {canonical}, got {names}")
@@ -207,6 +228,16 @@ def validate(root,release,smoke=True):
    for direction,degrees in SCREEN_DIRECTIONS.items():
     radians=math.radians(degrees); vector=(-math.sin(radians),math.cos(radians)); signs=tuple(0 if abs(x)<1e-5 else (1 if x>0 else -1) for x in vector)
     if signs!=expected_vectors[direction]: fail(f"directional-arrow: incorrect +Z screen semantic {direction}={degrees}")
+  elif role=="wall":
+   expected_contract={"body_opacity":0.24,"edge_opacity":0.82,"alpha_mode":"BLEND","blend":"alpha","double_sided":False,"cull":"back","depth_test":True,"depth_write":False,"order":"after-track","unit_cell_footprint":[0.94,0.94],"cell_pitch":[1.0,1.0],"adjacent_gap":[0.06,0.06],"xy_scale_authoritative":[1,1],"z_scale_authoritative":True}
+   if m["materials"].get("contract")!=expected_contract or rm["materials"].get("contract")!=expected_contract: fail("wall: cell/material/depth contract")
+   if set(materials)!={"mat/red_glass","mat/red_edge"}: fail("wall: exact analytic material inventory")
+   for name,alpha in (("mat/red_glass",.24),("mat/red_edge",.82)):
+    mat=materials[name]; factor=mat.get("pbrMetallicRoughness",{}).get("baseColorFactor",[]); extras=mat.get("extras",{}).get("aerobeat",{})
+    if factor[3]!=alpha or mat.get("alphaMode")!="BLEND" or mat.get("doubleSided") is not False: fail(f"wall: material alpha/cull {name}")
+    if extras!={"blend":"alpha","cull":"back","depthTest":True,"depthWrite":False,"order":"after-track","unitCellFootprint":[.94,.94],"xyScaleAuthoritative":[1,1],"zScaleAuthoritative":True}: fail(f"wall: material depth/scale semantics {name}")
+   if m["geometry"]["collision_free_bound"]!=[[-.47,-.47,-.5],[.47,.47,.5]]: fail("wall: exact cell collision-free bound")
+   if assert_wall_geometry(glb)!={"closed_body":True,"body_triangles":12,"edge_triangles":96,"coplanar_body_overlap":False}: fail("wall: geometry structure")
   elif role=="track":
    expected_contract={"opacity":0.52,"predecessor_opacity":0.20,"opacity_multiplier":2.6,"alpha_mode":"BLEND","blend":"alpha","double_sided":False,"cull":"back","depth_test":True,"depth_write":False,"order":"after-grid-before-wall","justification":"0.52 is 2.6x stronger than 0.20 and remains translucent blue glass over bright ice."}
    if m["materials"].get("contract")!=expected_contract or rm["materials"].get("contract")!=expected_contract: fail("track: visibility/depth/order contract")
@@ -224,7 +255,7 @@ def validate(root,release,smoke=True):
   measured=[aabb[1][i]-aabb[0][i] for i in range(3)]
   if not eq(measured,dims,2e-4): fail(f"{role}: exact dimensions {measured} != {dims}")
   predecessor_glb=root/"release"/"raw"/PREDECESSOR_RELEASE/role/(variant+".glb")
-  if role=="directional-arrow":
+  if role=="wall":
    if sha(glb)==sha(predecessor_glb): fail(f"{role}: required geometry successor GLB is unchanged")
   elif glb.read_bytes()!=predecessor_glb.read_bytes(): fail(f"{role}: geometry/material GLB changed outside approved scope")
   manifests.append((role,variant,glb,tris,aabb))
@@ -243,13 +274,16 @@ def validate(root,release,smoke=True):
  if proof["inventory_sha256"]!=sha(rel/"inventory.v1.json") or proof["claims"].get("combined_glb") is not False or proof["determinism"]["blend_snapshots_in_scope"] is not False: fail("release proof")
  arrow_claim=proof["claims"].get("directional_arrow",{})
  if arrow_claim.get("styled_faces")!=["+Z","-Z"] or arrow_claim.get("coplanar_overlapping_caps") is not False or arrow_claim.get("renderer_y_flip") is not False or arrow_claim.get("screen_direction_rotation_degrees")!=SCREEN_DIRECTIONS: fail("release proof directional-arrow structure/semantics")
+ expected_wall_claim={"source_dimensions":[.94,.94,1.0],"unit_cell_footprint":[.94,.94],"cell_pitch":[1.0,1.0],"adjacent_gap":[.06,.06],"xy_scale_authoritative":[1,1],"z_scale_authoritative":True,"centered_pivot":True,"closed_body":True,"adjacent_instances_overlap":False}
+ if proof["claims"].get("wall")!=expected_wall_claim: fail("release proof wall footprint/interval contract")
  review_dir=root/"review"/release; rh=load(review_dir/"hashes.v1.json"); layout=load(review_dir/"layout.v1.json")
  review_files={p.name for p in review_dir.glob("*.png")}
- expected_reviews={"neutral-board.png","gameplay-context.png","visibility-comparison.png","directional-arrow--outline-v1--plus-z-bright.png","directional-arrow--outline-v1--minus-z-bright.png"}|{r+"--"+v[0]+".png" for r,v in EXPECTED.items()}
+ expected_reviews={"neutral-board.png","gameplay-context.png","wall-grid-comparison.png","visibility-comparison.png","directional-arrow--outline-v1--plus-z-bright.png","directional-arrow--outline-v1--minus-z-bright.png"}|{r+"--"+v[0]+".png" for r,v in EXPECTED.items()}
  if review_files!=expected_reviews or {x["path"] for x in rh["files"]}!=review_files or rh["resolution"]!=[1600,900]: fail("review inventory/resolution")
  if rh.get("layout")!={"path":"layout.v1.json","bytes":(review_dir/"layout.v1.json").stat().st_size,"sha256":sha(review_dir/"layout.v1.json")}: fail("review layout hash/size")
  if rh.get("visibility")!={"path":"visibility.v1.json","bytes":(review_dir/"visibility.v1.json").stat().st_size,"sha256":sha(review_dir/"visibility.v1.json")}: fail("review visibility hash/size")
  if rh.get("contrast")!={"path":"contrast.v1.json","bytes":(review_dir/"contrast.v1.json").stat().st_size,"sha256":sha(review_dir/"contrast.v1.json")}: fail("review contrast hash/size")
+ if rh.get("wall_grid")!={"path":"wall-grid.v1.json","bytes":(review_dir/"wall-grid.v1.json").stat().st_size,"sha256":sha(review_dir/"wall-grid.v1.json")}: fail("review wall-grid hash/size")
  for e in rh["files"]:
   p=review_dir/e["path"]; data=p.read_bytes()
   if e.get("bytes")!=p.stat().st_size or sha(p)!=e["sha256"] or data[:8]!=b"\x89PNG\r\n\x1a\n" or struct.unpack(">IIBB",data[16:26])!=(1600,900,8,2): fail(f"review RGB/hash {e['path']}")
@@ -267,6 +301,11 @@ def validate(root,release,smoke=True):
  if context.get("required_counts")!=required or counts!=required: fail(f"gameplay context counts {counts}")
  marker_instances={x["instance"] for x in context["objects"] if x["role"]=="athlete-marker"}
  if marker_instances!={"athlete-marker/nose","athlete-marker/left-wrist","athlete-marker/right-wrist"}: fail("gameplay marker identities")
+ wall_grid=load(review_dir/"wall-grid.v1.json"); wall_layout=layout["images"]["wall-grid-comparison.png"]
+ expected_wall_grid={"schema":"aerobeat.wall-grid-review/v1","release":release,"image":"wall-grid-comparison.png","source_dimensions":[.94,.94,1.0],"measured_source_aabb":[[-.47,-.47,-.5],[.47,.47,.5]],"canonical_cell_dimensions":[.94,.94],"cell_pitch":[1.0,1.0],"adjacent_gap":[.06,.06],"pivot":[0,0,0],"xy_scale":[1,1],"z_scale":"authoritative interval only","rows":[{"name":"one-cell","centers":[[0,1.1]],"overlap":False},{"name":"adjacent-cells","centers":[[-1,-1.1],[0,-1.1],[1,-1.1]],"overlap":False}],"materials":{"analytic_only":True,"body":"mat/red_glass","edge":"mat/red_edge","depth_test":True,"depth_write":False,"order":"after-track"},"glb_sha256":sha(rel/"wall/red-glass-v1.glb")}
+ if wall_grid!=expected_wall_grid: fail("wall-grid evidence contract")
+ if wall_layout.get("kind")!="wall-grid-comparison" or len(wall_layout.get("objects",[]))!=4 or any(x.get("role")!="wall" or x.get("variant")!="red-glass-v1" for x in wall_layout["objects"]): fail("wall-grid visual identity/count evidence")
+ if any(abs((pitch-size)-gap)>1e-12 for pitch,size,gap in zip(wall_grid["cell_pitch"],wall_grid["source_dimensions"][:2],wall_grid["adjacent_gap"])): fail("wall-grid adjacent gap arithmetic")
  visibility=load(review_dir/"visibility.v1.json"); comparison=layout["images"]["visibility-comparison.png"]
  if visibility.get("schema")!="aerobeat.visibility-review/v1" or visibility.get("release")!=release or visibility.get("predecessor")!=PREDECESSOR_RELEASE: fail("visibility review schema/releases")
  if visibility.get("backgrounds")!=["DARK ICE","BRIGHT ICE","BLUE ICE"] or comparison.get("backgrounds")!=visibility["backgrounds"]: fail("visibility review backgrounds")
