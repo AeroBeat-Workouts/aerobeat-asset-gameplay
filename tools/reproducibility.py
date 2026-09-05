@@ -61,7 +61,7 @@ def main():
     link.unlink()
     shutil.copyfile(root/"LICENSE.md",dest/"LICENSE.md")
     run_checked(
-     [sys.executable,str(root/"tools/validate.py"),"--root",str(dest),"--release",a.release,"--no-smoke"],
+     [sys.executable,str(root/"tools/validate.py"),"--root",str(dest),"--release",a.release,"--no-smoke","--generated-fixture"],
      operation=f"strict temporary validation {dest.name}",
      marker=f"VALIDATE_OK release={a.release} assets=7 release_files=17 smoke=0",
      postcondition=lambda dest=dest: assert_build_postconditions(dest,a.release),

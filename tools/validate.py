@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Strict release/source validator for the canonical AeroBeat gameplay package."""
 from __future__ import annotations
-import argparse, ast, hashlib, json, math, os, shutil, struct, sys
+import argparse, ast, hashlib, json, math, os, shutil, struct, subprocess, sys
 from pathlib import Path
 
 from subprocess_contract import run_checked
@@ -23,6 +23,16 @@ PREDECESSOR_TREES={
  "review/0.0.5":(18,"04cac552f675060223abc9fa003caed27b9d7ddcbc254cc5125654bb773653a7"),
  "release/raw/0.0.6":(17,"d46ef42fdb0b2b743acbc0fabf87e7ae8a24bb5f7a8af729b43d09bba09306e3"),
  "review/0.0.6":(28,"8b15e960cd964bae223e02804253b801d508710a7e1c3f0d9ab3c22352184c0a"),
+}
+IMMUTABLE_CURRENT_TREES={
+ "release/raw/0.0.7":{
+  "git_tree":"846c41297230b5077ab1119880b729cc120e1098","files":17,"bytes":49515,"digest":"d7ed901aaff35295d25a1d79ca5caa243c3ade848b1a2dc22d664f4d1f3b8f28","modes":["100644"],
+  "anchors":{"inventory.v1.json":"ba3f40ad3b178da9845a74c89d3a89115d13fa5bd86b291bf41031df70eabbf4","proof.v1.json":"ebeb42ffaa351bcdbd7ae8120b62762d16d8957acd8a4b1286b324ffa5e6cfdb"},
+ },
+ "review/0.0.7":{
+  "git_tree":"8ca78c143d78743ff1dfce1b9fcadc5755a02530","files":28,"bytes":26231461,"digest":"91135c131745d17ca03a0a9e257c6adc747d65b96c9b9a7e3d5a4d1feacbc5dd","modes":["100644"],
+  "anchors":{"hashes.v1.json":"51d7864846e281e6f8492963270ba4d5423b148876515f3e60c45752036ae2a6"},
+ },
 }
 UNCHANGED_SOURCE_SHA256={
  "any-note/circle-v1/circle-v1.blend":"d4326da274913b454d8af9888c71295235bfd81c2c891fbbc980bea34f54365e",
@@ -67,6 +77,33 @@ def tree_digest(base):
  for p in sorted(x for x in base.rglob("*") if x.is_file()):
   rows.append(f"{p.relative_to(base).as_posix()}\0{p.stat().st_size}\0{sha(p)}\n")
  return len(rows),hashlib.sha256("".join(rows).encode("utf-8")).hexdigest()
+def assert_immutable_current_tree(root,relative,expected,check_git=True):
+ base=root/relative
+ if not base.is_dir(): fail(f"missing immutable current tree {base}")
+ files=sorted(x for x in base.rglob("*") if x.is_file())
+ rows=[f"{p.relative_to(base).as_posix()}\0{p.stat().st_size}\0{sha(p)}\n" for p in files]
+ actual={"files":len(files),"bytes":sum(p.stat().st_size for p in files),"digest":hashlib.sha256("".join(rows).encode("utf-8")).hexdigest()}
+ immutable_expected={key:expected[key] for key in ("files","bytes","digest")}
+ if actual!=immutable_expected: fail(f"immutable current mismatch {relative}: {actual} != {immutable_expected}")
+ for path,digest in expected["anchors"].items():
+  if sha(base/path)!=digest: fail(f"immutable current anchor mismatch {relative}/{path}")
+ if check_git:
+  tree=subprocess.check_output(["git","rev-parse",f"HEAD:{relative}"],cwd=root,text=True).strip()
+  if tree!=expected["git_tree"]: fail(f"immutable tracked tree mismatch {relative}: {tree} != {expected['git_tree']}")
+  output=subprocess.check_output(["git","ls-tree","-r","HEAD","--",relative],cwd=root,text=True)
+  entries=[]
+  for line in output.splitlines():
+   header,path=line.split("\t",1); mode,kind,_=header.split(" ",2)
+   if kind!="blob": fail(f"immutable tracked non-blob {relative}: {line}")
+   entries.append((mode,path))
+  tracked=[path for _,path in entries]
+  filesystem=[f"{relative}/{p.relative_to(base).as_posix()}" for p in files]
+  if tracked!=filesystem: fail(f"immutable tracked inventory mismatch {relative}")
+  modes=sorted(set(mode for mode,_ in entries))
+  if modes!=expected["modes"]: fail(f"immutable tracked modes mismatch {relative}: {modes} != {expected['modes']}")
+  for p in files:
+   if p.stat().st_mode & 0o111: fail(f"immutable worktree executable mode drifted {p}")
+ return actual
 def eq(a,b,e=1e-5): return len(a)==len(b) and all(abs(x-y)<=e for x,y in zip(a,b))
 def fail(msg): raise AssertionError(msg)
 def exact_keys(d,k,where):
@@ -219,7 +256,7 @@ def glb_facts(path,canonical):
    fail(f"{path}: transformed node violates identity transform contract: {n.get('name')}")
  return tris,[lo,hi],d
 
-def validate(root,release,smoke=True):
+def validate(root,release,smoke=True,check_git=True,check_immutable_review=True):
  rel=root/"release"/"raw"/release
  if release!=SUPPORTED_RELEASE: fail(f"unsupported release {release}; successor tooling requires explicit {SUPPORTED_RELEASE}")
  license_path=root/"LICENSE.md"
@@ -234,6 +271,9 @@ def validate(root,release,smoke=True):
   actual=tree_digest(base)
   if actual!=expected: fail(f"predecessor immutability mismatch {relative}: {actual} != {expected}")
  expected_source_paths={f"{r}/{v[0]}/{v[0]}.blend" for r,v in EXPECTED.items()}
+ for relative,expected in IMMUTABLE_CURRENT_TREES.items():
+  if check_immutable_review or not relative.startswith("review/"):
+   assert_immutable_current_tree(root,relative,expected,check_git=check_git)
  actual_source_paths={p.relative_to(root/"source").as_posix() for p in (root/"source").rglob("*") if p.is_file()}
  if actual_source_paths!=expected_source_paths: fail(f"source inventory mismatch missing={sorted(expected_source_paths-actual_source_paths)} extra={sorted(actual_source_paths-expected_source_paths)}")
  for relative,expected_sha in UNCHANGED_SOURCE_SHA256.items():
@@ -449,8 +489,10 @@ def validate(root,release,smoke=True):
  return manifests
 
 def main():
- ap=argparse.ArgumentParser(); ap.add_argument("--root",default="."); ap.add_argument("--release",required=True,choices=[SUPPORTED_RELEASE]); ap.add_argument("--no-smoke",action="store_true"); ap.add_argument("--finalize",action="store_true")
- a=ap.parse_args(); root=Path(a.root).resolve(); facts=validate(root,a.release,not a.no_smoke)
+ ap=argparse.ArgumentParser(); ap.add_argument("--root",default="."); ap.add_argument("--release",required=True,choices=[SUPPORTED_RELEASE]); ap.add_argument("--no-smoke",action="store_true"); ap.add_argument("--generated-fixture",action="store_true",help=argparse.SUPPRESS); ap.add_argument("--finalize",action="store_true")
+ a=ap.parse_args(); root=Path(a.root).resolve()
+ if a.generated_fixture and (not a.no_smoke or a.finalize): fail("--generated-fixture requires read-only --no-smoke validation")
+ facts=validate(root,a.release,not a.no_smoke,check_git=not a.generated_fixture,check_immutable_review=not a.generated_fixture)
  if a.finalize:
   rel=root/"release"/"raw"/a.release
   for p in rel.rglob("*"): os.chmod(p,0o444 if p.is_file() else 0o555)

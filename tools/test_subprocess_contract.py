@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import struct
 import subprocess
 import sys
@@ -12,7 +13,7 @@ import tempfile
 from pathlib import Path
 
 from subprocess_contract import run_checked
-from validate import assert_marker_geometry
+from validate import IMMUTABLE_CURRENT_TREES, assert_immutable_current_tree, assert_marker_geometry
 
 
 def assert_inward_marker_rejected(root):
@@ -47,6 +48,29 @@ def assert_inward_marker_rejected(root):
             raise AssertionError("validator accepted inward-wound marker mutation")
 
 
+def assert_immutable_tree_mutations_rejected(root):
+    for relative, expected in IMMUTABLE_CURRENT_TREES.items():
+        with tempfile.TemporaryDirectory(prefix="aerobeat-immutable-current-") as temp:
+            fixture_root = Path(temp)
+            fixture = fixture_root / relative
+            shutil.copytree(root / relative, fixture)
+            target = next(path for path in sorted(fixture.rglob("*")) if path.is_file())
+            data = bytearray(target.read_bytes())
+            if not data:
+                raise AssertionError(f"immutable mutation target is empty: {target}")
+            target.chmod(target.stat().st_mode | 0o200)
+            data[0] ^= 1
+            target.write_bytes(data)
+            try:
+                assert_immutable_current_tree(fixture_root, relative, expected, check_git=False)
+            except AssertionError as exc:
+                wanted = f"immutable current mismatch {relative}"
+                if wanted not in str(exc):
+                    raise AssertionError(f"wrong immutable tree rejection for {relative}: {exc}") from exc
+            else:
+                raise AssertionError(f"validator accepted one-byte mutation in {relative}")
+
+
 def require_contract_failure(command, operation, marker, env, expected, postcondition=None):
     try:
         run_checked(
@@ -69,6 +93,7 @@ def main():
     args = parser.parse_args()
     root = Path(args.root).resolve()
     assert_inward_marker_rejected(root)
+    assert_immutable_tree_mutations_rejected(root)
     with tempfile.TemporaryDirectory(prefix="aerobeat-fake-blender-") as temp:
         fake = Path(temp) / "blender"
         fake.write_text(
@@ -120,7 +145,7 @@ raise SystemExit(0)
                 raise AssertionError(f"reproducibility accepted fake Blender {scenario}:\n{reproduced.stdout}")
         env = base_env.copy(); env["FAKE_BLENDER_SCENARIO"] = "valid-marker"; env["FAKE_EXPECTED_MARKER"] = marker
         require_contract_failure([str(fake), "--operation"], "fake generation postcondition", marker, env, "postcondition returned false", postcondition=lambda: False)
-    print("CONTRACT_TEST_OK adversarial=5 inward_marker_mutation=1 validator_fake_blender=3 reproducibility_fake_blender=3")
+    print("CONTRACT_TEST_OK adversarial=7 inward_marker_mutation=1 immutable_current_mutations=2 validator_fake_blender=3 reproducibility_fake_blender=3")
 
 
 if __name__ == "__main__":
