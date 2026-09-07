@@ -165,14 +165,27 @@ def bidirectional_rimmed_plate(poly,separator,inset,z0,z1,inset_material):
         (*extrude(inset,z0+2*epsilon,z1-2*epsilon),inset_material),
     ]
 
-def filleted_loops(anchors,radii,segments,offsets):
-    """Sample tangent fillets and deterministic medial-axis re-rounded offsets.
+def line_intersection(point_a,direction_a,point_b,direction_b):
+    cross=direction_a.x*direction_b.y-direction_a.y*direction_b.x
+    if abs(cross)<1e-10: raise ValueError("parallel inset anchor edges")
+    delta=point_b-point_a
+    distance=(delta.x*direction_b.y-delta.y*direction_b.x)/cross
+    return point_a+direction_a*distance
 
-    The 0.086 band stack is wider than Alternative B's convex outer radii. A strict
-    parallel erosion would delete those arcs. We preserve exact normal displacement
-    at each corner bisector and continuously interpolate the surviving convex radius
-    to the required 0.045 fill-tip radius; concave arcs remain true parallel offsets.
-    """
+def inset_anchor_polygon(anchors,offset):
+    """Morphologically erode the straight-anchor polygon before independent joins."""
+    if offset==0: return list(anchors)
+    edges=[]
+    for i,p in enumerate(anchors):
+        q=anchors[(i+1)%len(anchors)]; direction=(Vector(q)-Vector(p)).normalized(); inward=Vector((-direction.y,direction.x))
+        edges.append((Vector(p)+inward*offset,direction))
+    inset=[]
+    for i in range(len(anchors)):
+        inset.append(tuple(line_intersection(*edges[i-1],*edges[i])))
+    if polygon_area(inset)<=1e-6: raise ValueError("inset anchor polygon collapsed")
+    return inset
+
+def sample_filleted_polygon(anchors,radii,segments):
     if polygon_area(anchors)<=0: raise ValueError("fillet anchors must be counter-clockwise")
     corners=[]
     for i,(p,r,count) in enumerate(zip(anchors,radii,segments)):
@@ -182,39 +195,45 @@ def filleted_loops(anchors,radii,segments,offsets):
         turn=math.atan2(incoming.x*outgoing.y-incoming.y*outgoing.x,incoming.dot(outgoing))
         distance=r*math.tan(abs(turn)*.5)
         if distance<=0: raise ValueError("zero fillet tangent distance")
-        tangent=Vector(p)-incoming*distance
-        sign=1 if turn>0 else -1
-        center=tangent+Vector((-incoming.y,incoming.x))*sign*r
-        start=math.atan2(tangent.y-center.y,tangent.x-center.x)
-        inward=(Vector((-incoming.y,incoming.x))+Vector((-outgoing.y,outgoing.x))).normalized()
-        corners.append((center,start,turn,r,count,sign,inward))
+        tangent=Vector(p)-incoming*distance; sign=1 if turn>0 else -1
+        center=tangent+Vector((-incoming.y,incoming.x))*sign*r; start=math.atan2(tangent.y-center.y,tangent.x-center.x)
+        corners.append((center,start,turn,r,count,distance))
+    for i,corner in enumerate(corners):
+        edge_length=(Vector(anchors[(i+1)%len(anchors)])-Vector(anchors[i])).length
+        consumed=corner[5]+corners[(i+1)%len(corners)][5]
+        if consumed>=edge_length-1e-6: raise ValueError(f"re-rounded tangent runs overlap edge={i} consumed={consumed} length={edge_length}")
+    loop=[]
+    for center,start,turn,r,count,_ in corners:
+        for step in range(count+1):
+            angle=start+turn*step/count
+            loop.append((center.x+r*math.cos(angle),center.y+r*math.sin(angle)))
+    if polygon_area(loop)<=0: raise ValueError("re-rounded boundary reversed")
+    return loop
+
+def filleted_loops(anchors,radii,segments,offsets,minimum_radii):
+    """Independent inset-anchor boundaries with collapse-safe re-rounded joins."""
     loops=[]
     for offset in offsets:
-        loop=[]
-        for center,start,turn,r,count,sign,inward in corners:
-            adjusted_center=center.copy()
-            if sign>0:
-                offset_radius=r+(.045-r)*(offset/.086)
-                adjusted_center+=inward*(offset-r+offset_radius)
-            else:
-                offset_radius=r+offset
-            for step in range(count+1):
-                angle=start+turn*step/count
-                loop.append((adjusted_center.x+offset_radius*math.cos(angle),adjusted_center.y+offset_radius*math.sin(angle)))
-        if polygon_area(loop)<=0: raise ValueError("offset loop reversed")
-        loops.append(loop)
+        inset=inset_anchor_polygon(anchors,offset)
+        # Naive r-offset values become negative at the inner boundaries. Clamp each
+        # independently authored join to its semantic floor; only the arrow fill tip
+        # requires .045, while shoulders/necks may tighten to retain valid tangent runs.
+        effective=[max(floor,radius-offset) for radius,floor in zip(radii,minimum_radii)]
+        try: loops.append(sample_filleted_polygon(inset,effective,segments))
+        except ValueError as error: raise ValueError(f"morphological offset {offset}: {error}") from error
     return loops
 
 def solve_arrow_loops(offsets):
     radii=[.050,.050,.045,.060,.055,.060,.045]
+    minimum_radii=[.020,.020,.020,.020,.045,.020,.020]
     segments=[8,8,6,13,8,13,6]
     head_x=.390; tip_y=.390
     for _ in range(40):
-        anchors=[(-.155,-.390),(.155,-.390),(.155,.055),(head_x,.055),(0,tip_y),(-head_x,.055),(-.155,.055)]
-        outer=filleted_loops(anchors,radii,segments,[0])[0]
+        anchors=[(-.175,-.390),(.175,-.390),(.175,.055),(head_x,.055),(0,tip_y),(-head_x,.055),(-.175,.055)]
+        outer=filleted_loops(anchors,radii,segments,[0],minimum_radii)[0]
         head_x+=.390-max(x for x,_ in outer)
         tip_y+=.390-max(y for _,y in outer)
-    loops=filleted_loops(anchors,radii,segments,offsets)
+    loops=filleted_loops(anchors,radii,segments,offsets,minimum_radii)
     if len(loops[0])!=69: raise ValueError("arrow perimeter sample contract")
     return loops
 
@@ -222,14 +241,15 @@ def solve_guard_loops(offsets):
     # CCW order: lower-left transition, bottom lobe, lower-right transition,
     # right shoulder, right crown, left crown, left shoulder.
     radii=[.060,.065,.060,.055,.050,.050,.055]
+    minimum_radii=[.025,.035,.025,.025,.025,.025,.025]
     segments=[5,7,5,5,4,4,5]
     side_x=.360; bottom_y=-.410
     for _ in range(40):
         anchors=[(-.30,-.20),(0,bottom_y),(.30,-.20),(side_x,.30),(.25,.41),(-.25,.41),(-side_x,.30)]
-        outer=filleted_loops(anchors,radii,segments,[0])[0]
+        outer=filleted_loops(anchors,radii,segments,[0],minimum_radii)[0]
         side_x+=.360-max(x for x,_ in outer)
         bottom_y+=-.410-min(y for _,y in outer)
-    loops=filleted_loops(anchors,radii,segments,offsets)
+    loops=filleted_loops(anchors,radii,segments,offsets,minimum_radii)
     if len(loops[0])!=42: raise ValueError("guard perimeter sample contract")
     return loops
 
@@ -773,11 +793,11 @@ def material_manifest(role,names):
             "fill_material":fill_material,"runtime_tint_material":None if role=="guard" else "mat/tint_base",
             "runtime_tintable":role!="guard"}
         if role=="directional-arrow":
-            result["contract"].update({"fillet_radii":{"tip":.055,"outer_head_shoulders":.060,"concave_necks":.045,"tail_corners":.050},"perimeter_samples":69,"expected_triangles":1928,"renderer_y_flip":False,"screen_direction_rotation_degrees":SCREEN_DIRECTIONS})
+            result["contract"].update({"fillet_radii":{"tip":.055,"outer_head_shoulders":.060,"concave_necks":.045,"tail_corners":.050},"boundary_construction":"independent-inset-anchor-morphological-erosion","cumulative_cap_offsets":[.014,.066,.086],"join_policy":"collapsed joins re-rounded independently; bands may widen but never narrow","outer_shaft_half_width":.175,"nominal_fill_shaft_width":.178,"minimum_fill_shaft_width":.170,"minimum_fill_neck_width":.145,"minimum_fill_tip_radius":.045,"minimum_colored_fill_area_ratio":.35,"minimum_interior_readability_area_ratio":.42,"perimeter_samples":69,"expected_triangles":1928,"renderer_y_flip":False,"screen_direction_rotation_degrees":SCREEN_DIRECTIONS})
         elif role=="any-note":
             result["contract"].update({"analytic_radii":[.350,.336,.284,.264],"perimeter_samples":64,"circularity_minimum":.998,"expected_triangles":1788})
         else:
-            result["contract"].update({"fillet_radii":{"top_crown":.050,"upper_shoulders":.055,"lower_side_transitions":.060,"bottom_lobe":.065},"perimeter_samples":42,"mirror_symmetric_x":True,"expected_triangles":1172})
+            result["contract"].update({"fillet_radii":{"top_crown":.050,"upper_shoulders":.055,"lower_side_transitions":.060,"bottom_lobe":.065},"boundary_construction":"independent-inset-anchor-morphological-erosion","cumulative_cap_offsets":[.014,.066,.086],"join_policy":"collapsed joins re-rounded independently; bands may widen but never narrow","minimum_fill_area_ratio":.48,"perimeter_samples":42,"mirror_symmetric_x":True,"expected_triangles":1172})
     elif role=="track":
         result["contract"]={
             "opacity":0.52,"predecessor_opacity":0.20,"opacity_multiplier":2.6,

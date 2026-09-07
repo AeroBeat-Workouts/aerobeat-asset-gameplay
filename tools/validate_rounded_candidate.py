@@ -48,6 +48,42 @@ def accessor(doc,binary,index):
  fmt,size={5123:("<H",2),5125:("<I",4)}[value["componentType"]]
  return [struct.unpack_from(fmt,binary,start+i*size)[0] for i in range(value["count"])]
 def qpoint(point): return tuple(round(value,7) for value in point)
+def polygon_area(points): return abs(sum(points[i][0]*points[(i+1)%len(points)][1]-points[(i+1)%len(points)][0]*points[i][1] for i in range(len(points)))/2)
+def point_segment_distance(point,left,right):
+ vx,vy=right[0]-left[0],right[1]-left[1]; wx,wy=point[0]-left[0],point[1]-left[1]; length=vx*vx+vy*vy
+ t=0 if length==0 else max(0,min(1,(wx*vx+wy*vy)/length)); return math.hypot(point[0]-(left[0]+t*vx),point[1]-(left[1]+t*vy))
+def minimum_polyline_distance(inner,outer):
+ samples=[]
+ for i,point in enumerate(inner):
+  following=inner[(i+1)%len(inner)]; samples.extend((point,((point[0]+following[0])/2,(point[1]+following[1])/2)))
+ return min(min(point_segment_distance(point,outer[i],outer[(i+1)%len(outer)]) for i in range(len(outer))) for point in samples)
+def orientation(a,b,c): return (b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])
+def assert_simple_polygon(points,label):
+ if polygon_area(points)<=1e-8: fail(f"{label}: collapsed area")
+ for i in range(len(points)):
+  a,b=points[i],points[(i+1)%len(points)]
+  for j in range(i+1,len(points)):
+   if j in (i,(i+1)%len(points)) or i in (j,(j+1)%len(points)): continue
+   c,d=points[j],points[(j+1)%len(points)]
+   if orientation(a,b,c)*orientation(a,b,d)<0 and orientation(c,d,a)*orientation(c,d,b)<0: fail(f"{label}: self-intersection")
+def assert_symmetric(points,label,tolerance=2e-5):
+ if any(not any(abs(other_x+x)<=tolerance and abs(other_y-y)<=tolerance for other_x,other_y in points) for x,y in points): fail(f"{label}: asymmetric")
+def assert_non_narrowing_band(outer,inner,target,label,tolerance=.00015):
+ distance=minimum_polyline_distance(inner,outer)
+ if distance<target-tolerance: fail(f"{label}: narrowed {distance} < {target}")
+ return distance
+def circumradius(a,b,c):
+ ab=math.dist(a,b); bc=math.dist(b,c); ca=math.dist(c,a); cross=abs(orientation(a,b,c))
+ if cross<1e-10: fail("collapsed radius sample")
+ return ab*bc*ca/(2*cross)
+def assert_naive_radii_positive(radii,offset):
+ if any(radius-offset<=0 for radius in radii): fail("naive negative-radius offset")
+def assert_area_ratio(inner,outer,minimum,label):
+ ratio=polygon_area(inner)/polygon_area(outer)
+ if ratio<minimum: fail(f"{label}: area ratio {ratio}")
+ return ratio
+def assert_single_fill_boundary(boundaries,label):
+ if len(boundaries)!=1: fail(f"{label}: disconnected fill")
 
 def validate_cue(path,role):
  variant,dims,pivot,samples,expected_triangles,ceiling,fill_role,tintable=EXPECTED[role]
@@ -122,7 +158,8 @@ def validate_cue(path,role):
  white_boundaries=boundary_components(("mat/charcoal","mat/white"))
  fill_name="mat/green" if role=="guard" else "mat/tint_base"
  fill_boundaries=boundary_components(("mat/charcoal",fill_name))
- if len(white_boundaries)!=2 or len(fill_boundaries)!=1 or any(len(component)!=samples for component in white_boundaries+fill_boundaries): fail(f"{role}: material boundary loops")
+ assert_single_fill_boundary(fill_boundaries,role)
+ if len(white_boundaries)!=2 or any(len(component)!=samples for component in white_boundaries+fill_boundaries): fail(f"{role}: material boundary loops")
  white_boundaries.sort(key=lambda component:max(math.hypot(*point) for point in component),reverse=True)
  outer_white,inner_white=white_boundaries; fill_boundary=fill_boundaries[0]
  def corresponding_separation(outer,inner):
@@ -135,9 +172,20 @@ def validate_cue(path,role):
   return best[1]
  bevel=.010 if role=="guard" else .012
  silhouette=max((component for component in boundary_components(z=zmax-bevel) if len(component)==samples),key=lambda component:max(math.hypot(*point) for point in component))
- measured_bands=(corresponding_separation(silhouette,outer_white),corresponding_separation(outer_white,inner_white),corresponding_separation(inner_white,fill_boundary))
- chord_tolerance=.0015
- if measured_bands[0]<.014*.90-chord_tolerance or measured_bands[1]<.052*.90-chord_tolerance or measured_bands[2]<.020*.90-chord_tolerance: fail(f"{role}: narrow projected bands {measured_bands}")
+ for label,boundary in (("silhouette",silhouette),("outer-white",outer_white),("inner-white",inner_white),("fill",fill_boundary)): assert_simple_polygon(boundary,f"{role} {label}")
+ measured_bands=(assert_non_narrowing_band(silhouette,outer_white,.014,f"{role} outer charcoal"),assert_non_narrowing_band(outer_white,inner_white,.052,f"{role} white"),assert_non_narrowing_band(inner_white,fill_boundary,.020,f"{role} inner charcoal"))
+ if role in ("directional-arrow","guard"):
+  for label,boundary in (("silhouette",silhouette),("outer-white",outer_white),("inner-white",inner_white),("fill",fill_boundary)): assert_symmetric(boundary,f"{role} {label}")
+ if role=="directional-arrow":
+  shaft_half=max(abs(x) for x,y in fill_boundary if y<0); shaft_width=2*shaft_half
+  colored_ratio=assert_area_ratio(fill_boundary,silhouette,.35,"directional-arrow colored fill"); readability_ratio=assert_area_ratio(inner_white,silhouette,.42,"directional-arrow readability")
+  if abs(shaft_half-.089)>2e-5 or shaft_width<.170 or shaft_width<.145: fail(f"directional-arrow: straight shaft/neck readability {shaft_width}")
+  tip=max(range(len(fill_boundary)),key=lambda index:fill_boundary[index][1]); tip_radius=circumradius(fill_boundary[(tip-3)%samples],fill_boundary[tip],fill_boundary[(tip+3)%samples])
+  if tip_radius<.045-2e-5: fail(f"directional-arrow: fill tip radius {tip_radius}")
+ elif role=="guard":
+  colored_ratio=assert_area_ratio(fill_boundary,silhouette,.48,"guard colored fill")
+ nonplanar_faces=[i for i,tri in enumerate(triangles) if not (all(abs(positions[index][2]-zmin)<1e-6 for index in tri) or all(abs(positions[index][2]-zmax)<1e-6 for index in tri))]
+ if not nonplanar_faces or any(triangle_material[index]!="mat/charcoal" for index in nonplanar_faces): fail(f"{role}: bevel/longitudinal wall must be charcoal")
  for z,sign in ((zmin,-1),(zmax,1)):
   cap_faces=[i for i,tri in enumerate(triangles) if all(abs(positions[index][2]-z)<1e-6 for index in tri)]
   if not cap_faces or {triangle_material[i] for i in cap_faces}!=expected_names: fail(f"{role}: incomplete material bands at z={z}")
@@ -168,6 +216,9 @@ def validate(authority,candidate):
   comparable=lambda document:{**document,"files":{key:value for key,value in document["files"].items() if key not in ("source_sha256","source_bytes")}}
   if comparable(manifest)!=comparable(staged): fail(f"{role}: staged/generated manifest semantic drift")
   if manifest["geometry"]["triangle_count"]!=spec[4] or manifest["geometry"]["triangle_budget"]!=spec[5] or manifest["coordinates"]["visible_face"]!="both +Z/-Z" or manifest["dependencies"]!=[] or manifest["provenance"]["external_assets"]!=[] or manifest["provenance"]["network"] is not False: fail(f"{role}: manifest geometry/face/provenance contract")
+  contract=manifest["materials"]["contract"]
+  if role in ("directional-arrow","guard") and (contract.get("boundary_construction")!="independent-inset-anchor-morphological-erosion" or contract.get("cumulative_cap_offsets")!=[.014,.066,.086] or contract.get("join_policy")!="collapsed joins re-rounded independently; bands may widen but never narrow"): fail(f"{role}: morphology metadata")
+  if role=="directional-arrow" and any(contract.get(key)!=value for key,value in {"outer_shaft_half_width":.175,"nominal_fill_shaft_width":.178,"minimum_fill_shaft_width":.170,"minimum_fill_neck_width":.145,"minimum_fill_tip_radius":.045,"minimum_colored_fill_area_ratio":.35,"minimum_interior_readability_area_ratio":.42}.items()): fail("directional-arrow: readability metadata")
  for role,variant in UNCHANGED:
   current=release/role/f"{variant}.glb"; predecessor=authority/"release/raw/0.0.7"/role/f"{variant}.glb"
   if current.read_bytes()!=predecessor.read_bytes(): fail(f"{role}: selected GLB changed")

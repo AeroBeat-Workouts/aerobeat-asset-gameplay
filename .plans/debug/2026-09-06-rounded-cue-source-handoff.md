@@ -22,7 +22,7 @@ All ceilings are below the hard 4,096-triangle per-cue limit. The renderer-facin
 
 The conventional axial bevel begins at silhouette offset `0` and reaches its planar cap at `.012` for arrow/circle or `.010` for guard. Material boundaries remain silhouette-relative `.014/.066/.086`, preserving the circle's required projected radii `.350/.336/.284/.264`. The outer charcoal keyline therefore wraps the full bevel and continues `.002` on the arrow/circle planar cap or `.004` on the guard cap. Cross-section order is exactly `outline_charcoal → outline_white → outline_charcoal → fill` on both `+Z` and `−Z`; the central side is charcoal.
 
-The `.086` stack crosses the medial axis of the specified small convex polygon fillets. The generator handles that topology event explicitly with a continuous deterministic medial-axis re-round: corresponding sampled widths remain at least 90% after the allowed `.0015` chord tolerance, while the inner cue remains rounded and readable. The analytic circle remains exact and does not use this transition.
+The `.086` stack crosses the medial axis of the specified small convex polygon fillets. Arrow and guard therefore construct every boundary from an independently eroded seven-anchor polygon and apply semantic tangent re-rounds after collapsed negative-radius features are removed. The outer silhouette/radii remain unchanged; surviving straight runs retain exact `.014/.052/.020` normal widths, while high-curvature joins may widen but never narrow within `.00015` tessellation distance tolerance. Arrow shaft half-width `.175` yields exact `.178` fill width. Its colored fill is `35.59%` of the outer face and the interior readability footprint after white is `49.06%`, exceeding corrected transparent bounds `35%/42%`; its fill tip remains radius `.045`. The analytic circle remains exactly concentric and does not use this topology transition.
 
 Changed GLBs split corners only at export for explicit hard normals; geometric-position welding proves one connected closed genus-zero manifold. Editable Blender sources retain one welded mesh. Every material is analytic alpha-1 `OPAQUE`, back-culled, depth-tested, and depth-writing. Arrow/any `note_fill` alone is runtime tintable; guard fill and all structural bands are fixed.
 
@@ -42,7 +42,7 @@ Bomb, wall, track, and athlete-marker selected editable sources and generated ca
 - immutable `0.0.7` strict validator: PASS, including clean Blender smoke
 - subprocess/adversarial baseline suite: PASS
 - disposable rounded candidate: PASS at exact `1928/1788/1172` triangles, Euler `2`, positive volume, opposite directed-edge pairing, explicit-normal minimum dot effectively `1.0`, exact materials and no external dependencies
-- rounded adversarial mutations: PASS (reversed triangle, structural tint corruption, double-sided corruption, external dependency)
+- 13 rounded adversarial mutations/checks: PASS (reversed/count-drift triangles, structural tint, double-sided material, dependency, naive negative radius, self-intersection, narrowed straight/join band, join widening acceptance, disconnected fill, tip radius, area, symmetry)
 - source/GLB clean Blender smoke: PASS for all three changed identities
 - renderer-visible-window oracle: PASS (`23,688/25,000`, `42/48`)
 - two independent disposable raw candidates: byte-identical; canonical release absent
