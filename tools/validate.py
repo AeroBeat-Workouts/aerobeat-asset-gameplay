@@ -270,7 +270,7 @@ def validate(root,release,smoke=True,check_git=True,check_immutable_review=True)
   if not base.is_dir(): fail(f"missing immutable predecessor tree {base}")
   actual=tree_digest(base)
   if actual!=expected: fail(f"predecessor immutability mismatch {relative}: {actual} != {expected}")
- expected_source_paths={f"{r}/{v[0]}/{v[0]}.blend" for r,v in EXPECTED.items()}
+ expected_source_paths={f"{r}/{v[0]}/{v[0]}.blend" for r,v in EXPECTED.items()}|{"directional-arrow/rounded-outline-v1/rounded-outline-v1.blend","any-note/outlined-circle-v1/outlined-circle-v1.blend","guard/outlined-shield-v1/outlined-shield-v1.blend"}
  for relative,expected in IMMUTABLE_CURRENT_TREES.items():
   if check_immutable_review or not relative.startswith("review/"):
    assert_immutable_current_tree(root,relative,expected,check_git=check_git)
@@ -374,7 +374,8 @@ def validate(root,release,smoke=True,check_git=True,check_immutable_review=True)
  actual={p.relative_to(rel).as_posix() for p in rel.rglob("*") if p.is_file()}
  if actual!=expected_paths: fail(f"release inventory mismatch missing={sorted(expected_paths-actual)} extra={sorted(actual-expected_paths)}")
  setdoc=load(rel/"sets/default-v1.json")
- if setdoc!=load(root/"sets/default-v1.json"): fail("release set differs")
+ staged_set=load(root/"sets/default-v1.json")
+ if staged_set.get("release")!="0.0.8" or staged_set.get("roles")!={"directional-arrow":"rounded-outline-v1","any-note":"outlined-circle-v1","guard":"outlined-shield-v1","bomb":"urchin-v1","wall":"red-glass-v1","track":"blue-glass-v1","athlete-marker":"sphere-v1"}: fail("mutable staged successor set")
  if setdoc.get("roles")!={r:v[0] for r,v in EXPECTED.items()}: fail("set mapping is not independently exact")
  if setdoc.get("constraints")!={"guard_instances_per_beat":2,"guard_canonical_asset":"guard/shield-v1"}: fail("canonical shield constraint")
  inv=load(rel/"inventory.v1.json"); listed={x["path"]:x for x in inv["payload"]}; payload=expected_paths-{"inventory.v1.json","proof.v1.json"}
@@ -455,7 +456,7 @@ def validate(root,release,smoke=True,check_git=True,check_immutable_review=True)
    entry=layout["images"].get(image,{})
    if entry.get("kind")!="athlete-marker-face-contrast" or entry.get("camera_face")!=face or entry.get("background")!=background.upper() or entry.get("backface_culling") is not True or entry.get("embedded_normals") is not True or entry.get("exterior_visible") is not True or len(entry.get("objects",[]))!=1: fail(f"athlete-marker: missing truthful culling {face}/{background} layout evidence")
  # Tool/source policy: no third-party imports, network calls, asset loading, textures, fonts, or engine metadata.
- allowed={"argparse","ast","hashlib","json","math","os","pathlib","shutil","struct","subprocess","subprocess_contract","validate","sys","tempfile","bpy","bpy_extras","mathutils","__future__"}
+ allowed={"argparse","ast","collections","hashlib","json","math","os","pathlib","shutil","struct","subprocess","subprocess_contract","validate","validate_rounded_candidate","sys","tempfile","bpy","bpy_extras","mathutils","__future__"}
  for p in sorted((root/"tools").glob("*.py")):
   tree=ast.parse(p.read_text(encoding="utf-8"),filename=str(p))
   imports=set()

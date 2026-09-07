@@ -26,7 +26,15 @@ for primitive in primitives:
     if primitive["attributes"]!=attributes: raise RuntimeError("primitive attribute mismatch")
     idx=[x[0] for x in accessor(primitive["indices"])]
     faces.extend(tuple(idx[i:i+3]) for i in range(0,len(idx),3))
-if canonical=="athlete-marker/sphere-v1":
+rounded_counts={"directional-arrow/rounded-outline-v1":1928,"any-note/outlined-circle-v1":1788,"guard/outlined-shield-v1":1172}
+if canonical in rounded_counts:
+    if normals is None or len(normals)!=len(positions) or len(faces)!=rounded_counts[canonical]: raise RuntimeError("rounded cue exact POSITION/NORMAL/face count failed")
+    agreement=[]
+    for tri in faces:
+        a,b,c=(Vector(positions[i]) for i in tri); unit=(b-a).cross(c-a).normalized()
+        agreement.extend(unit.dot(Vector(normals[i])) for i in tri)
+    if min(agreement)<=.9: raise RuntimeError(f"rounded cue NORMAL agreement failed: {min(agreement)}")
+elif canonical=="athlete-marker/sphere-v1":
     if normals is None or len(normals)!=len(positions) or len(faces)!=168: raise RuntimeError("marker exact POSITION/NORMAL/face count failed")
     winding=[]; agreement=[]
     for tri in faces:
@@ -42,6 +50,6 @@ if normals is not None: mesh.normals_split_custom_set_from_vertices(normals)
 obj=bpy.data.objects.new(canonical,mesh); bpy.context.collection.objects.link(obj)
 if len(mesh.polygons)!=len(faces) or not faces: raise RuntimeError("mesh import validation failed")
 if any(abs(x)>1e-7 for x in obj.location) or any(abs(x)>1e-7 for x in obj.rotation_euler) or any(abs(x-1)>1e-7 for x in obj.scale): raise RuntimeError("non-identity transform")
-if canonical=="athlete-marker/sphere-v1" and (len(mesh.materials)!=3 or any(not material.use_backface_culling for material in mesh.materials)):
-    raise RuntimeError("marker reconstructed material backface culling is disabled")
+if (canonical=="athlete-marker/sphere-v1" or canonical in rounded_counts) and (len(mesh.materials)!=3 or any(not material.use_backface_culling for material in mesh.materials)):
+    raise RuntimeError("opaque reconstructed material backface culling is disabled")
 print(f"SMOKE_OK kind=glb identity={canonical}")

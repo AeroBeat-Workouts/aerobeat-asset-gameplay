@@ -24,14 +24,25 @@ After a release validates, do not mutate it. Corrections require a new release v
 Requires Blender `4.0.2` and Python 3.
 
 ```bash
-blender --background --factory-startup --python tools/generate.py -- --output-root . --release 0.0.7
+# Immutable published baseline remains independently valid.
 python3 tools/validate.py --root . --release 0.0.7
-python3 tools/reproducibility.py --root . --release 0.0.7
 python3 tools/test_subprocess_contract.py --root .
-python3 tools/validate.py --root . --release 0.0.7 --finalize
+
+# Staged rounded successor: generates only disposable temporary candidates.
+python3 tools/reproducibility_rounded.py --root .
+python3 tools/test_visible_window_budget.py
+# Against a disposable candidate root produced by tools/generate.py:
+python3 tools/validate_rounded_candidate.py --authority-root . --candidate-root /tmp/<candidate>
+python3 tools/test_rounded_adversarial.py --candidate-root /tmp/<candidate>
 ```
 
-Generation requires explicit supported successor `0.0.7`, preserves directional arrow, circle, guard, bomb, wall, and track source snapshots, GLBs, and per-asset manifests byte-for-byte from `0.0.6`, and re-authors only the marker source. The marker remains one canonical `0.18 × 0.18 × 0.18` sphere for nose and both wrists. Its single closed, non-overlapping surface is partitioned into `mat/tint_base`, stable `mat/white`, and stable `mat/charcoal`; only the tint core advertises `runtimeTintable:true`. Every marker triangle is outward CCW under glTF semantics, geometric face normals positively agree with every referenced explicit outward unit radial NORMAL, and source/reconstructed materials enable backface culling. All three analytic materials are explicit alpha-1 `OPAQUE`, back-face culled, depth-tested, and depth-writing. Review evidence reconstructs the embedded GLB POSITION/NORMAL/index data under culling and covers the actual rejected predecessor/current marker on dark, bright, and blue fields plus every `±X/±Y/±Z` camera direction on both bright and dark fields. The unchanged exact wall remains `0.94 × 0.94 × 1.00`; the confirmed-good unchanged arrow retains its closed bidirectional opaque structure. Validation parses GLB headers and JSON/BIN chunks; checks exact dimensions, marker topology/material partition/outward winding/geometric-NORMAL agreement/all-direction visibility/no-coplanar contract, inventory/hashes/names/bounds/budgets/materials/dependencies/license, immutable raw/review `0.0.1–0.0.6`, exact six-role predecessor byte identity, and truthful culling-enabled review evidence before clean Blender source/GLB smoke operations. The adversarial suite reverses every marker triangle and requires fail-closed rejection. Every subprocess uses one fail-closed contract. Reproducibility compares two independent temporary builds with the immutable primary.
+## Staged Aero Rounded successor sources
+
+The mutable source tree and manifests stage Alternative B identities `directional-arrow/rounded-outline-v1`, `any-note/outlined-circle-v1`, and the sole canonical two-instance guard `guard/outlined-shield-v1`. They do **not** constitute a release: canonical `release/raw/0.0.8` and `review/0.0.8` must remain absent until independent QA/audit authorization. `tools/generate.py` supports explicit successor `0.0.8` only in a disposable output root, copies bomb/wall/track/athlete-marker from immutable `0.0.7`, and generates 68 temporary actual-GLB review renders spanning both camera faces, side and three-quarter views on dark/bright/blue fields.
+
+Each changed cue is one closed connected geometric two-manifold with outward consistent winding, explicit per-corner normals, three 30-degree axial bevel segments per face, and an opaque two-sided projected `charcoal → white → charcoal → fill` surface. The outer charcoal keyline includes the face bevel: circle projected radii remain exactly `0.350 / 0.336 / 0.284 / 0.264`. Only arrow/any `note_fill` advertises `runtimeTintable:true`; guard `guard_fill`, `outline_white`, and `outline_charcoal` are fixed. Because the `0.086` band stack crosses the medial axis of the specified small convex outer fillets, polygon cues use an explicit continuous medial-axis re-round while retaining at least 90% sampled corresponding width (within the `0.0015` chord tolerance).
+
+The exact closed-shell count is `T(N)=28N−4`: arrow `N=69`, `1,928 ≤ 2,432`; circle `N=64`, `1,788 ≤ 2,176`; guard `N=42`, `1,172 ≤ 1,536`. The renderer-facing canonical 4×3 visible-window oracle models eight arrows, two circles, and two guard beats (four shield instances): 14 cue instances, 23,688 triangles, and 42 primitive draw calls, bounded at 25,000/48. Candidate validation checks GLB chunks, no external dependencies, exact AABBs/counts/material roles, cap ordering and widths, circle circularity/radii, geometric manifold/Euler/connectedness, opposite edge winding, positive volume, explicit normal agreement, immutable predecessor Git trees, and exact four-role source/GLB identity. Adversarial tests reverse winding and corrupt tint/culling/dependency metadata; clean Blender smoke opens all three sources and GLBs.
 
 The finalized `0.0.5` raw release contains exactly 17 files / 45,819 bytes with tree digest `24f6bb3b86657716ed03958a32dee5c9db3904aa980cb0a839aacac0590cc860`, inventory SHA-256 `4984cca24b8121bc6657153304726f1f7ef05d878ca5220f3c3e2b6f2457a102`, and proof SHA-256 `4aac2274a9803a05e9ff533c02958cf1c5def66e0af1bf2fae3cc4479319f350`. Its wall GLB is 3,692 bytes with SHA-256 `1227bfbb7d5379b33f1468c1a0d7fffad07c9390654b54033f079ba602a84a37`. Review `0.0.5` contains 13 RGB `1600 × 900` PNGs plus five JSON evidence files.
 
@@ -41,7 +52,7 @@ The finalized `0.0.7` raw release contains exactly 17 files / 49,515 bytes with 
 
 ## Coordinates and consumption
 
-Right-handed, **+Y up**, gameplay/local forward **−Z**. Assets are authored at identity rotation and unit scale with the specification-defined pivot. Consumers may independently mix variants through a set manifest and own runtime placement, role colors, direction rotation, timing tint, interval scaling, transparent sorting, outline passes, lane/row visuals, instancing, and world text. `guard/shield-v1` is one canonical model that consumers instance twice.
+Right-handed, **+Y up**, gameplay/local forward **−Z**. Assets are authored at identity rotation and unit scale with the specification-defined pivot. Consumers may independently mix variants through a set manifest and own runtime placement, role colors, direction rotation, timing tint, interval scaling, transparent sorting, outline passes, lane/row visuals, instancing, and world text. `guard/outlined-shield-v1` is the staged canonical model that consumers instance twice; immutable releases through `0.0.7` retain `guard/shield-v1`.
 
 ## Rights
 

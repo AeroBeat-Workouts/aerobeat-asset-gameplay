@@ -13,22 +13,23 @@ import bpy
 from bpy_extras.object_utils import world_to_camera_view
 from mathutils import Vector
 
-SUPPORTED_RELEASE = "0.0.7"
-PREDECESSOR_RELEASE = "0.0.6"
+SUPPORTED_RELEASE = "0.0.8"
+PREDECESSOR_RELEASE = "0.0.7"
 VERSION = None
 BLENDER = "4.0.2"
-GENERATOR = "aerobeat-gameplay-generator-v6"
-CHANGED_SOURCE_ROLES = {"athlete-marker"}
+GENERATOR = "aerobeat-gameplay-generator-v7"
+CHANGED_SOURCE_ROLES = {"directional-arrow", "any-note", "guard"}
 
 ASSETS = [
-    dict(role="directional-arrow", variant="outline-v1", dimensions=[0.78,0.78,0.18], pivot=[0,0,0], budget=420, bound=[[-0.42,-0.42,-0.11],[0.42,0.42,0.11]], reuse="one mesh for Flow and Boxing; rotate only about local Z"),
-    dict(role="any-note", variant="circle-v1", dimensions=[0.70,0.70,0.18], pivot=[0,0,0], budget=320, bound=[[-0.38,-0.38,-0.11],[0.38,0.38,0.11]], reuse="one directionless mesh across applicable modes"),
-    dict(role="guard", variant="shield-v1", dimensions=[0.72,0.82,0.16], pivot=[0,0,0.07], budget=520, bound=[[-0.39,-0.44,-0.10],[0.39,0.44,0.10]], reuse="exactly one canonical shield; instance twice simultaneously without mirroring or material/scale variation"),
+    dict(role="directional-arrow", variant="rounded-outline-v1", dimensions=[0.78,0.78,0.18], pivot=[0,0,0], budget=2432, expected_triangles=1928, samples=69, bevel=.012, bound=[[-0.42,-0.42,-0.11],[0.42,0.42,0.11]], reuse="one mesh for Flow and Boxing; rotate only about local Z"),
+    dict(role="any-note", variant="outlined-circle-v1", dimensions=[0.70,0.70,0.18], pivot=[0,0,0], budget=2176, expected_triangles=1788, samples=64, bevel=.012, bound=[[-0.38,-0.38,-0.11],[0.38,0.38,0.11]], reuse="one directionless mesh across applicable modes"),
+    dict(role="guard", variant="outlined-shield-v1", dimensions=[0.72,0.82,0.16], pivot=[0,0,0.07], budget=1536, expected_triangles=1172, samples=42, bevel=.010, bound=[[-0.39,-0.44,-0.10],[0.39,0.44,0.10]], reuse="exactly one canonical shield; instance twice simultaneously without mirroring or material/scale variation"),
     dict(role="bomb", variant="urchin-v1", dimensions=[0.78,0.78,0.78], pivot=[0,0,0], budget=900, bound=[[-0.42,-0.42,-0.42],[0.42,0.42,0.42]], reuse="one bomb mesh for every bomb event"),
     dict(role="wall", variant="red-glass-v1", dimensions=[0.94,0.94,1.00], pivot=[0,0,0], budget=144, bound=[[-0.47,-0.47,-0.50],[0.47,0.47,0.50]], reuse="one canonical 0.94 x 0.94 cell footprint at unit X/Y scale; scale only Z to authoritative L=max(0.08,speedWorldUnitsPerMs*(endTimestampMs-centerTimestampMs)); adjacent 1.0-pitch cells retain a 0.06 gap"),
     dict(role="track", variant="blue-glass-v1", dimensions=[4.20,0.06,24.00], pivot=[0,0.03,0], budget=160, bound=[[-2.14,-0.04,-12.04],[2.14,0.08,12.04]], reuse="one canonical segment; extend by deterministic segment reuse, never stretch lane-line width"),
     dict(role="athlete-marker", variant="sphere-v1", dimensions=[0.18,0.18,0.18], pivot=[0,0,0], budget=192, bound=[[-0.10,-0.10,-0.10],[0.10,0.10,0.10]], reuse="same full 3D sphere for nose and both wrists; truthful world positions and normal depth"),
 ]
+LEGACY_VARIANTS = (("directional-arrow","outline-v1"),("any-note","circle-v1"),("guard","shield-v1"))
 
 SCREEN_DIRECTIONS = {
     "up": 0, "up-right": -45, "right": -90, "down-right": -135,
@@ -164,6 +165,138 @@ def bidirectional_rimmed_plate(poly,separator,inset,z0,z1,inset_material):
         (*extrude(inset,z0+2*epsilon,z1-2*epsilon),inset_material),
     ]
 
+def filleted_loops(anchors,radii,segments,offsets):
+    """Sample tangent fillets and deterministic medial-axis re-rounded offsets.
+
+    The 0.086 band stack is wider than Alternative B's convex outer radii. A strict
+    parallel erosion would delete those arcs. We preserve exact normal displacement
+    at each corner bisector and continuously interpolate the surviving convex radius
+    to the required 0.045 fill-tip radius; concave arcs remain true parallel offsets.
+    """
+    if polygon_area(anchors)<=0: raise ValueError("fillet anchors must be counter-clockwise")
+    corners=[]
+    for i,(p,r,count) in enumerate(zip(anchors,radii,segments)):
+        previous=anchors[i-1]; following=anchors[(i+1)%len(anchors)]
+        incoming=Vector((p[0]-previous[0],p[1]-previous[1])).normalized()
+        outgoing=Vector((following[0]-p[0],following[1]-p[1])).normalized()
+        turn=math.atan2(incoming.x*outgoing.y-incoming.y*outgoing.x,incoming.dot(outgoing))
+        distance=r*math.tan(abs(turn)*.5)
+        if distance<=0: raise ValueError("zero fillet tangent distance")
+        tangent=Vector(p)-incoming*distance
+        sign=1 if turn>0 else -1
+        center=tangent+Vector((-incoming.y,incoming.x))*sign*r
+        start=math.atan2(tangent.y-center.y,tangent.x-center.x)
+        inward=(Vector((-incoming.y,incoming.x))+Vector((-outgoing.y,outgoing.x))).normalized()
+        corners.append((center,start,turn,r,count,sign,inward))
+    loops=[]
+    for offset in offsets:
+        loop=[]
+        for center,start,turn,r,count,sign,inward in corners:
+            adjusted_center=center.copy()
+            if sign>0:
+                offset_radius=r+(.045-r)*(offset/.086)
+                adjusted_center+=inward*(offset-r+offset_radius)
+            else:
+                offset_radius=r+offset
+            for step in range(count+1):
+                angle=start+turn*step/count
+                loop.append((adjusted_center.x+offset_radius*math.cos(angle),adjusted_center.y+offset_radius*math.sin(angle)))
+        if polygon_area(loop)<=0: raise ValueError("offset loop reversed")
+        loops.append(loop)
+    return loops
+
+def solve_arrow_loops(offsets):
+    radii=[.050,.050,.045,.060,.055,.060,.045]
+    segments=[8,8,6,13,8,13,6]
+    head_x=.390; tip_y=.390
+    for _ in range(40):
+        anchors=[(-.155,-.390),(.155,-.390),(.155,.055),(head_x,.055),(0,tip_y),(-head_x,.055),(-.155,.055)]
+        outer=filleted_loops(anchors,radii,segments,[0])[0]
+        head_x+=.390-max(x for x,_ in outer)
+        tip_y+=.390-max(y for _,y in outer)
+    loops=filleted_loops(anchors,radii,segments,offsets)
+    if len(loops[0])!=69: raise ValueError("arrow perimeter sample contract")
+    return loops
+
+def solve_guard_loops(offsets):
+    # CCW order: lower-left transition, bottom lobe, lower-right transition,
+    # right shoulder, right crown, left crown, left shoulder.
+    radii=[.060,.065,.060,.055,.050,.050,.055]
+    segments=[5,7,5,5,4,4,5]
+    side_x=.360; bottom_y=-.410
+    for _ in range(40):
+        anchors=[(-.30,-.20),(0,bottom_y),(.30,-.20),(side_x,.30),(.25,.41),(-.25,.41),(-side_x,.30)]
+        outer=filleted_loops(anchors,radii,segments,[0])[0]
+        side_x+=.360-max(x for x,_ in outer)
+        bottom_y+=-.410-min(y for _,y in outer)
+    loops=filleted_loops(anchors,radii,segments,offsets)
+    if len(loops[0])!=42: raise ValueError("guard perimeter sample contract")
+    return loops
+
+def cue_shell(loops,z0,z1,bevel,fill_material):
+    """One connected closed exterior with two-sided partitioned physical bands."""
+    n=len(loops[0])
+    if any(len(loop)!=n for loop in loops): raise ValueError("cue shell loops must correspond")
+    vertices=[]; faces=[]; face_materials=[]
+    def add_loop(loop,z):
+        start=len(vertices); vertices.extend((x,y,z) for x,y in loop); return list(range(start,start+n))
+    def add_face(triangle,material_name): faces.append(triangle); face_materials.append(material_name)
+    def strip(outer,inner,material_name,reverse=False):
+        for i in range(n):
+            j=(i+1)%n
+            pair=[(outer[i],outer[j],inner[j]),(outer[i],inner[j],inner[i])]
+            for tri in pair: add_face((tri[0],tri[2],tri[1]) if reverse else tri,material_name)
+    def cap_strip(outer,inner,material_name,reverse=False):
+        def positive(triangle):
+            a,b,c=(vertices[index] for index in triangle)
+            return (b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])>1e-12
+        for i in range(n):
+            j=(i+1)%n
+            primary=[(outer[i],outer[j],inner[j]),(outer[i],inner[j],inner[i])]
+            alternate=[(outer[i],outer[j],inner[i]),(outer[j],inner[j],inner[i])]
+            pair=primary if all(positive(triangle) for triangle in primary) else alternate
+            if not all(positive(triangle) for triangle in pair): raise ValueError("self-crossing cap annulus quad")
+            for tri in pair: add_face((tri[0],tri[2],tri[1]) if reverse else tri,material_name)
+    # Loops are analytic outer/bevel contours plus the documented medial-axis
+    # re-rounded cap-band family at silhouette-relative offsets.
+    outer=loops[0]; cap_outer=loops[3]; band_loops=[cap_outer,loops[4],loops[5],loops[6]]
+    top=[]; bottom=[]
+    for step in range(4):
+        theta=math.radians(30*step); d=bevel*(1-math.cos(theta))
+        # d entries are offsets[step] by construction.
+        top.append(add_loop(loops[step],z1-bevel+bevel*math.sin(theta)))
+        bottom.append(add_loop(loops[step],z0+bevel-bevel*math.sin(theta)))
+    strip(bottom[0],top[0],"charcoal")
+    for step in range(3):
+        strip(top[step],top[step+1],"charcoal")
+        strip(bottom[step],bottom[step+1],"charcoal",reverse=True)
+    top_cap=[top[3]]+[add_loop(loop,z1) for loop in band_loops[1:]]
+    bottom_cap=[bottom[3]]+[add_loop(loop,z0) for loop in band_loops[1:]]
+    band_materials=["charcoal","white","charcoal"]
+    for step,material_name in enumerate(band_materials):
+        cap_strip(top_cap[step],top_cap[step+1],material_name)
+        cap_strip(bottom_cap[step],bottom_cap[step+1],material_name,reverse=True)
+    for a,b,c in triangulate(band_loops[-1]):
+        add_face((top_cap[-1][a],top_cap[-1][b],top_cap[-1][c]),fill_material)
+        add_face((bottom_cap[-1][a],bottom_cap[-1][c],bottom_cap[-1][b]),fill_material)
+    return vertices,faces,face_materials
+
+def build_rounded_cue(role):
+    if role=="directional-arrow": bevel=.012; z0,z1=-.09,.09; fill="tint_base"; contour=solve_arrow_loops
+    elif role=="any-note":
+        bevel=.012; z0,z1=-.09,.09; fill="tint_base"
+        contour=lambda offsets:[[( (.35-d)*math.cos(2*math.pi*i/64),(.35-d)*math.sin(2*math.pi*i/64)) for i in range(64)] for d in offsets]
+    elif role=="guard": bevel=.010; z0,z1=-.15,.01; fill="green"; contour=solve_guard_loops
+    else: raise ValueError(role)
+    offsets=[0]+[bevel*(1-math.cos(math.radians(30*step))) for step in (1,2,3)]+[.014,.066,.086]
+    loops=contour(offsets)
+    vertices,faces,face_names=cue_shell(loops,z0,z1,bevel,fill)
+    names=[]; material_indices=[]
+    for name in face_names:
+        if name not in names: names.append(name)
+        material_indices.append(names.index(name))
+    return vertices,faces,material_indices,names
+
 def box(x0,x1,y0,y1,z0,z1):
     v=[(x0,y0,z0),(x1,y0,z0),(x1,y1,z0),(x0,y1,z0),(x0,y0,z1),(x1,y0,z1),(x1,y1,z1),(x0,y1,z1)]
     f=[(0,2,1),(0,3,2),(4,5,6),(4,6,7),(0,1,5),(0,5,4),(1,2,6),(1,6,5),(2,3,7),(2,7,6),(3,0,4),(3,4,7)]
@@ -216,21 +349,8 @@ def build_geometry(role):
     def matn(n):
         if n not in names: names.append(n)
         return names.index(n)
-    if role=="directional-arrow":
-        p=[(-.16,-.39),(.16,-.39),(.16,.05),(.39,.05),(0,.39),(-.39,.05),(-.16,.05)]
-        separator=[(-.135,-.36),(.135,-.36),(.135,.08),(.31,.08),(0,.335),(-.31,.08),(-.135,.08)]
-        inset=[(-.105,-.32),(.105,-.32),(.105,.115),(.235,.115),(0,.275),(-.235,.115),(-.105,.115)]
-        for cv,cf,m in bidirectional_rimmed_plate(p,separator,inset,-.09,.09,"tint_base"):
-            add_comp(v,f,mi,cv,cf,matn(m))
-    elif role=="any-note":
-        p=[(.35*math.cos(2*math.pi*i/24),.35*math.sin(2*math.pi*i/24)) for i in range(24)]
-        for cv,cf,m in rimmed_plate(p,-.09,.09,.87,.73,"cyan"):
-            add_comp(v,f,mi,cv,cf,matn(m))
-    elif role=="guard":
-        p=[(-.36,.30),(-.25,.41),(.25,.41),(.36,.30),(.30,-.20),(0,-.41),(-.30,-.20)]
-        # Geometry center is z=-0.07 because origin is the specified rear-grip pivot.
-        for cv,cf,m in rimmed_plate(p,-.15,.01,.88,.73,"green"):
-            add_comp(v,f,mi,cv,cf,matn(m))
+    if role in CHANGED_SOURCE_ROLES:
+        return build_rounded_cue(role)
     elif role=="bomb":
         cv,cf=uv_sphere(.22); add_comp(v,f,mi,cv,cf,matn("black"))
         dirs=[(1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)]
@@ -301,28 +421,49 @@ def measured(obj):
 
 def write_glb(path,obj,material_names):
     """Write a minimal deterministic glTF 2.0 binary without exporter dependencies."""
-    positions=[tuple(v.co) for v in obj.data.vertices]
+    role=obj.name.split("/",1)[0]
+    source_positions=[tuple(v.co) for v in obj.data.vertices]
+    indices_by_material=[]; normals=None
+    if role in CHANGED_SOURCE_ROLES:
+        # Split corners in the GLB only, retaining one welded editable Blender mesh.
+        # This permits explicit face/seam normals while topology validation welds the
+        # identical geometric positions and proves the single manifold exterior.
+        positions=[]; normals=[]
+        for mat_index in range(len(material_names)):
+            indices=[]
+            for poly in obj.data.polygons:
+                if poly.material_index!=mat_index: continue
+                a,b,c=(Vector(source_positions[index]) for index in poly.vertices)
+                normal=(b-a).cross(c-a).normalized()
+                for source_index in poly.vertices:
+                    indices.append(len(positions)); positions.append(source_positions[source_index]); normals.append(tuple(normal))
+            indices_by_material.append(indices)
+    else:
+        positions=source_positions
+        for mat_index in range(len(material_names)):
+            indices=[]
+            for poly in obj.data.polygons:
+                if poly.material_index==mat_index:
+                    if len(poly.vertices)!=3: raise RuntimeError("generator requires triangulated faces")
+                    indices.extend(poly.vertices)
+            indices_by_material.append(indices)
+        if role=="athlete-marker":
+            normals=[]
+            for position in positions:
+                length=math.sqrt(sum(value*value for value in position))
+                normals.append(tuple(value/length for value in position))
     binary=bytearray().join(struct.pack("<fff",*p) for p in positions)
     views=[{"buffer":0,"byteOffset":0,"byteLength":len(binary),"target":34962}]
     accessors=[{"bufferView":0,"componentType":5126,"count":len(positions),"type":"VEC3","min":[min(p[i] for p in positions) for i in range(3)],"max":[max(p[i] for p in positions) for i in range(3)]}]
     attributes={"POSITION":0}
-    if obj.name.startswith("athlete-marker/"):
-        normals=[]
-        for position in positions:
-            length=math.sqrt(sum(value*value for value in position))
-            normals.append(tuple(value/length for value in position))
+    if normals is not None:
         while len(binary)%4: binary.append(0)
         offset=len(binary); binary.extend(b"".join(struct.pack("<fff",*normal) for normal in normals))
         views.append({"buffer":0,"byteOffset":offset,"byteLength":len(binary)-offset,"target":34962})
         accessors.append({"bufferView":len(views)-1,"componentType":5126,"count":len(normals),"type":"VEC3","min":[min(n[i] for n in normals) for i in range(3)],"max":[max(n[i] for n in normals) for i in range(3)]})
         attributes["NORMAL"]=len(accessors)-1
     primitives=[]
-    for mat_index in range(len(material_names)):
-        indices=[]
-        for poly in obj.data.polygons:
-            if poly.material_index==mat_index:
-                if len(poly.vertices)!=3: raise RuntimeError("generator requires triangulated faces")
-                indices.extend(poly.vertices)
+    for mat_index,indices in enumerate(indices_by_material):
         while len(binary)%4: binary.append(0)
         off=len(binary); component=5123 if len(positions)<65536 else 5125; fmt="<H" if component==5123 else "<I"
         binary.extend(b"".join(struct.pack(fmt,i) for i in indices))
@@ -336,9 +477,10 @@ def write_glb(path,obj,material_names):
         m={"name":"mat/"+name,"pbrMetallicRoughness":{"baseColorFactor":list(rgba),"metallicFactor":0.0,"roughnessFactor":rough},"doubleSided":False}
         if emit: m["emissiveFactor"]=[rgba[0]*min(emit,1),rgba[1]*min(emit,1),rgba[2]*min(emit,1)]
         if blend=="BLEND": m["alphaMode"]="BLEND"
-        if role=="directional-arrow":
+        if role in CHANGED_SOURCE_ROLES:
+            material_role="outline_white" if name=="white" else ("outline_charcoal" if name=="charcoal" else ("guard_fill" if role=="guard" else "note_fill"))
             m["alphaMode"]="OPAQUE"
-            m["extras"]={"aerobeat":{"blend":"opaque","cull":"back","depthTest":True,"depthWrite":True,"runtimeTintable":name=="tint_base"}}
+            m["extras"]={"aerobeat":{"materialRole":material_role,"runtimeTintable":material_role=="note_fill","blend":"opaque","cull":"back","depthTest":True,"depthWrite":True}}
         elif role=="track":
             m["extras"]={"aerobeat":{"blend":"alpha" if blend=="BLEND" else "opaque","cull":"back","depthTest":True,"depthWrite":False if blend=="BLEND" else True,"order":"after-grid-before-wall"}}
         elif role=="wall":
@@ -564,6 +706,10 @@ def review(root):
     p=rd/"visibility-comparison.png"; render(p); images.append(p)
     layouts[p.name]={"kind":"visibility-comparison","minimum_margin":.035,"backgrounds":[x[0] for x in rows],"counts_per_release":{"athlete-marker":3},"backface_culling":True,"objects":[layout_entry(camera,r,v,o,n,release) for r,v,o,n,release in compare]}
     visibility={"schema":"aerobeat.marker-visibility-review/v1","release":VERSION,"predecessor":PREDECESSOR_RELEASE,"image":"visibility-comparison.png","backgrounds":[x[0] for x in rows],"camera":"consistent -Z review-facing mini-scenes; actual release GLBs","counts_per_release":{"athlete-marker":3},"geometry":{PREDECESSOR_RELEASE:{"dimensions":[.18,.18,.18],"triangles":168},VERSION:{"dimensions":[.18,.18,.18],"triangles":168,"outward_ccw":True,"embedded_normal_agreement":True}},"materials":{PREDECESSOR_RELEASE:{"names":["mat/charcoal","mat/white","mat/tint_base"],"alpha":1.0,"alpha_mode":"OPAQUE","backface_culling":True,"rejected_inward_winding":True},VERSION:{"names":["mat/charcoal","mat/white","mat/tint_base"],"alpha":1.0,"alpha_mode":"OPAQUE","blend":"opaque","cull":"back","depth_test":True,"depth_write":True,"backface_culling":True,"runtime_tint_material":"mat/tint_base","structural_materials":["mat/white","mat/charcoal"]}},"glb_sha256":{PREDECESSOR_RELEASE:old_marker,VERSION:new_marker}}
+    visibility["materials"][PREDECESSOR_RELEASE]={"names":["mat/charcoal","mat/white","mat/tint_base"],"alpha":1.0,"alpha_mode":"OPAQUE","backface_culling":True,"outward_ccw":True}
+    visibility["materials"][VERSION]={**visibility["materials"][PREDECESSOR_RELEASE],"blend":"opaque","cull":"back","depth_test":True,"depth_write":True,"runtime_tint_material":"mat/tint_base","structural_materials":["mat/white","mat/charcoal"],"byte_identical_to_predecessor":True}
+    visibility["geometry"][PREDECESSOR_RELEASE]={"dimensions":[.18,.18,.18],"triangles":168,"outward_ccw":True,"embedded_normal_agreement":True}
+    visibility["geometry"][VERSION]={**visibility["geometry"][PREDECESSOR_RELEASE],"byte_identical_to_predecessor":True}
     write_json(rd/"visibility.v1.json",visibility)
     # Camera-accessible marker evidence covers every cardinal hemisphere on both
     # bright and dark fields. The source remains exactly 0.18 units in every axis.
@@ -586,6 +732,18 @@ def review(root):
     bright=COLORS["bright_ice"][0][:3]; dark=COLORS["dark_ice"][0][:3]; white=COLORS["white"][0][:3]; charcoal=COLORS["charcoal"][0][:3]
     contrast_evidence={"schema":"aerobeat.athlete-marker-contrast/v1","release":VERSION,"backgrounds":["BRIGHT","DARK"],"images":face_images,"camera_faces":[x[0] for x in camera_directions],"materials":{"alpha":1.0,"alpha_mode":"OPAQUE","blend":"opaque","cull":"back","depth_test":True,"depth_write":True,"backface_culling":True,"analytic_only":True,"runtime_tint_material":"mat/tint_base","structural_materials":["mat/white","mat/charcoal"]},"geometry":{"dimensions":[.18,.18,.18],"surface":"one closed partitioned sphere","explicit_normals":True,"outward_ccw":True,"geometric_normal_agreement":True,"coplanar_overlapping_faces":False,"material_triangle_counts":{"mat/charcoal":24,"mat/white":80,"mat/tint_base":64},"all_materials_visible_each_camera_direction":True,"exterior_visible_with_backface_culling":True},"analytic_contrast":{"white_vs_charcoal":contrast(white,charcoal),"charcoal_vs_bright_ice":contrast(charcoal,bright),"white_vs_dark_ice":contrast(white,dark),"minimum_structural_required":7.0}}
     write_json(rd/"contrast.v1.json",contrast_evidence)
+    # Actual generated-GLB cue faces on every required analytic field. These remain
+    # disposable review evidence unless a later independent audit authorizes release.
+    cue_directions=(("plus-z",(0,0,1)),("minus-z",(0,0,-1)),("plus-x",(1,0,0)),("three-quarter-plus-z",(.45,.30,1)),("three-quarter-minus-z",(.45,.30,-1)))
+    for cue_role in ("directional-arrow","any-note","guard"):
+        cue_spec=roles[cue_role]; cue_path=root/"release"/"raw"/VERSION/cue_role/(cue_spec["variant"]+".glb")
+        for background,color_name in (("dark","dark_ice"),("bright","bright_ice"),("blue","blue_ice")):
+            for face,direction in cue_directions:
+                reset(); setup_render(COLORS[color_name][0])
+                o=import_review_mesh(cue_path,f"{cue_role}/{face}-{background}")
+                camera,_=fit_camera([o],direction=direction,margin=.16,lens=58)
+                p=rd/f"{cue_role}--{cue_spec['variant']}--{face}-{background}.png"; render(p); images.append(p)
+                layouts[p.name]={"kind":"rounded-cue-face-contrast","camera_face":face,"background":background.upper(),"minimum_margin":.16,"backface_culling":True,"embedded_normals":True,"objects":[layout_entry(camera,cue_role,cue_spec["variant"],o,f"{cue_role}/{face}-{background}")]}
     # Calculated, safe-margin individual three-quarter views.
     for s in ASSETS:
         reset(); setup_render(); o=add_review_asset(s,rotation=(0,math.radians(58),0) if s["role"]=="track" else (0,0,0),instance=s["role"]+"/individual")
@@ -602,14 +760,24 @@ def glb_json(path):
 
 def material_manifest(role,names):
     result={"analytic_only":True,"textures":[],"names":names}
-    if role=="directional-arrow":
+    if role in CHANGED_SOURCE_ROLES:
+        fill_material="mat/green" if role=="guard" else "mat/tint_base"
         result["contract"]={
             "opacity":1.0,"alpha_mode":"OPAQUE","blend":"opaque","double_sided":False,
-            "cull":"back","depth_test":True,"depth_write":True,
-            "white_outline_material":"mat/white","runtime_tint_material":"mat/tint_base",
-            "runtime_tint_targets":["red","yellow","green"],"styled_faces":["+Z","-Z"],
-            "coplanar_overlapping_caps":False,"renderer_y_flip":False,
-            "screen_direction_rotation_degrees":SCREEN_DIRECTIONS}
+            "cull":"back","depth_test":True,"depth_write":True,"explicit_normals":True,
+            "winding":"outward-ccw","geometric_normal_agreement":True,"surface":"one closed connected two-manifold exterior",
+            "face_band_order":["outline_charcoal","outline_white","outline_charcoal",("guard_fill" if role=="guard" else "note_fill")],
+            "band_widths":{"outer_charcoal":0.014,"white":0.052,"inner_charcoal":0.020},
+            "bevel_segments":3,"bevel_radius":0.010 if role=="guard" else 0.012,
+            "styled_faces":["+Z","-Z"],"coplanar_overlapping_caps":False,
+            "fill_material":fill_material,"runtime_tint_material":None if role=="guard" else "mat/tint_base",
+            "runtime_tintable":role!="guard"}
+        if role=="directional-arrow":
+            result["contract"].update({"fillet_radii":{"tip":.055,"outer_head_shoulders":.060,"concave_necks":.045,"tail_corners":.050},"perimeter_samples":69,"expected_triangles":1928,"renderer_y_flip":False,"screen_direction_rotation_degrees":SCREEN_DIRECTIONS})
+        elif role=="any-note":
+            result["contract"].update({"analytic_radii":[.350,.336,.284,.264],"perimeter_samples":64,"circularity_minimum":.998,"expected_triangles":1788})
+        else:
+            result["contract"].update({"fillet_radii":{"top_crown":.050,"upper_shoulders":.055,"lower_side_transitions":.060,"bottom_lobe":.065},"perimeter_samples":42,"mirror_symmetric_x":True,"expected_triangles":1172})
     elif role=="track":
         result["contract"]={
             "opacity":0.52,"predecessor_opacity":0.20,"opacity_multiplier":2.6,
@@ -647,7 +815,7 @@ def main():
           "names":{"node":s["role"]+"/"+s["variant"],"mesh":s["role"]+"/"+s["variant"]+"/mesh","materials":mats},
           "source_authority":{"generator":"tools/generate.py","blend_byte_determinism_claimed":False,"note":"The tracked .blend is an editable binary snapshot; deterministic generator code is authoritative."},
           "geometry":{"dimensions":s["dimensions"],"measured_aabb":aabb,"pivot":s["pivot"],"object_origin":[0,0,0],"rotation_euler":[0,0,0],"scale":[1,1,1],"triangle_count":tris,"triangle_budget":s["budget"],"collision_free_bound":s["bound"]},
-          "coordinates":{"handedness":"right","up":"+Y","forward":"-Z","visible_face":"all camera directions" if s["role"]=="athlete-marker" else ("both +Z/-Z" if s["role"]=="directional-arrow" else ("-Z" if s["role"] in ("any-note","guard") else "not-applicable"))},
+          "coordinates":{"handedness":"right","up":"+Y","forward":"-Z","visible_face":"all camera directions" if s["role"]=="athlete-marker" else ("both +Z/-Z" if s["role"] in CHANGED_SOURCE_ROLES else "not-applicable")},
           "materials":material_manifest(s["role"],mats),"reuse":s["reuse"],
           "rights":{"license":"CC-BY-NC-4.0","creator":"AeroBeat / Gambit Games","third_party_content":False},
           "provenance":{"method":"locally authored deterministic procedural primitives","generator":GENERATOR,"blender":BLENDER,"external_assets":[],"network":False},
@@ -668,7 +836,7 @@ def main():
                 mp.parent.mkdir(parents=True,exist_ok=True); mp.write_bytes(source_manifest.read_bytes())
             manifest=json.loads(mp.read_text(encoding="utf-8"))
         records.append((s,src,glb,mp,rmp,manifest))
-    setdoc={"schema":"aerobeat.gameplay-set/v1","name":"default-v1","release":VERSION,"roles":{s["role"]:s["variant"] for s in ASSETS},"constraints":{"guard_instances_per_beat":2,"guard_canonical_asset":"guard/shield-v1"}}
+    setdoc={"schema":"aerobeat.gameplay-set/v1","name":"default-v1","release":VERSION,"roles":{s["role"]:s["variant"] for s in ASSETS},"constraints":{"guard_instances_per_beat":2,"guard_canonical_asset":"guard/outlined-shield-v1"}}
     write_json(root/"sets"/"default-v1.json",setdoc); write_json(rel/"sets"/"default-v1.json",setdoc)
     payload=[]
     for p in sorted(rel.rglob("*")):
@@ -676,10 +844,11 @@ def main():
     inv={"schema":"aerobeat.release-inventory/v1","release":VERSION,"immutable":True,"expected_asset_count":7,"payload":payload}
     write_json(rel/"inventory.v1.json",inv)
     proof={"schema":"aerobeat.release-proof/v1","release":VERSION,"inventory_sha256":sha(rel/"inventory.v1.json"),"generator":GENERATOR,"blender":BLENDER,"determinism":{"scope":"every file under release/raw/%s"%VERSION,"method":"primary plus two clean temporary byte comparisons","blend_snapshots_in_scope":False},"blend_snapshot_limitation":"Blender .blend container bytes are not claimed deterministic; tracked editable snapshots are subordinate to tools/generate.py.","claims":{"separate_glbs":True,"combined_glb":False,"analytic_materials_only":True,"textures":0,"external_dependencies":0,"canonical_shields":1,"guard_instances_required":2,"changed_identity":"athlete-marker/sphere-v1","byte_identical_predecessor_roles":["directional-arrow","any-note","guard","bomb","wall","track"],"directional_arrow":{"opacity":1.0,"alpha_mode":"OPAQUE","depth_test":True,"depth_write":True,"styled_faces":["+Z","-Z"],"coplanar_overlapping_caps":False,"renderer_y_flip":False,"runtime_tint_targets":["red","yellow","green"],"screen_direction_rotation_degrees":SCREEN_DIRECTIONS},"track":{"opacity":0.52,"predecessor_opacity":0.20,"opacity_multiplier":2.6,"alpha_mode":"BLEND","depth_write":False,"order":"after-grid-before-wall"},"wall":{"source_dimensions":[0.94,0.94,1.0],"unit_cell_footprint":[0.94,0.94],"cell_pitch":[1.0,1.0],"adjacent_gap":[0.06,0.06],"xy_scale_authoritative":[1,1],"z_scale_authoritative":True,"centered_pivot":True,"closed_body":True,"adjacent_instances_overlap":False},"athlete_marker":{"dimensions":[0.18,0.18,0.18],"canonical_identity":"athlete-marker/sphere-v1","canonical_instances":["nose","left-wrist","right-wrist"],"opacity":1.0,"alpha_mode":"OPAQUE","depth_test":True,"depth_write":True,"explicit_normals":True,"winding":"outward-ccw","geometric_normal_agreement":True,"source_backface_culling":True,"runtime_tint_material":"mat/tint_base","structural_materials":["mat/white","mat/charcoal"],"all_camera_directions":["+X","-X","+Y","-Y","+Z","-Z"],"coplanar_overlapping_faces":False}}}
+    proof={"schema":"aerobeat.release-proof/v1","release":VERSION,"inventory_sha256":sha(rel/"inventory.v1.json"),"generator":GENERATOR,"blender":BLENDER,"determinism":{"scope":f"every file under release/raw/{VERSION}","method":"two independent disposable temporary byte comparisons","blend_snapshots_in_scope":False},"blend_snapshot_limitation":"Blender .blend container bytes are not claimed deterministic; tracked editable snapshots are subordinate to tools/generate.py.","claims":{"separate_glbs":True,"combined_glb":False,"analytic_materials_only":True,"textures":0,"external_dependencies":0,"canonical_shields":1,"guard_instances_required":2,"changed_identities":["directional-arrow/rounded-outline-v1","any-note/outlined-circle-v1","guard/outlined-shield-v1"],"byte_identical_predecessor_roles":["bomb","wall","track","athlete-marker"],"rounded_cues":{"triangle_formula":"28N-4","expected_triangles":{"directional-arrow":1928,"any-note":1788,"guard":1172},"ceilings":{"directional-arrow":2432,"any-note":2176,"guard":1536},"styled_faces":["+Z","-Z"],"bands":["outline_charcoal","outline_white","outline_charcoal","fill"],"coplanar_overlapping_caps":False,"explicit_normals":True,"winding":"outward-ccw"},"directional_arrow":{"renderer_y_flip":False,"screen_direction_rotation_degrees":SCREEN_DIRECTIONS},"track":{"opacity":0.52,"predecessor_opacity":0.20,"opacity_multiplier":2.6,"alpha_mode":"BLEND","depth_write":False,"order":"after-grid-before-wall"},"wall":{"source_dimensions":[0.94,0.94,1.0],"unit_cell_footprint":[0.94,0.94],"cell_pitch":[1.0,1.0],"adjacent_gap":[0.06,0.06],"xy_scale_authoritative":[1,1],"z_scale_authoritative":True,"centered_pivot":True,"closed_body":True,"adjacent_instances_overlap":False},"athlete_marker":{"dimensions":[0.18,0.18,0.18],"canonical_identity":"athlete-marker/sphere-v1","canonical_instances":["nose","left-wrist","right-wrist"],"byte_identical_to_predecessor":True}}}
     write_json(rel/"proof.v1.json",proof)
     review(root)
     expected_release={"inventory.v1.json","proof.v1.json","sets/default-v1.json"}
-    expected_sources=set(); expected_manifests=set()
+    expected_sources={f"{role}/{variant}/{variant}.blend" for role,variant in LEGACY_VARIANTS}; expected_manifests={f"{role}/{variant}.v1.json" for role,variant in LEGACY_VARIANTS}
     for s in ASSETS:
         role=s["role"]; variant=s["variant"]
         expected_release|={f"{role}/{variant}.glb",f"manifests/{role}/{variant}.v1.json"}
@@ -691,13 +860,14 @@ def main():
     review_dir=root/"review"/VERSION
     actual_review_pngs={p.name for p in review_dir.glob("*.png")}
     marker_faces={f"athlete-marker--sphere-v1--{face}-{background}.png" for face in ("plus-x","minus-x","plus-y","minus-y","plus-z","minus-z") for background in ("bright","dark")}
-    expected_review_pngs={"neutral-board.png","gameplay-context.png","wall-grid-comparison.png","visibility-comparison.png"}|marker_faces|{s["role"]+"--"+s["variant"]+".png" for s in ASSETS}
+    cue_faces={f"{s['role']}--{s['variant']}--{face}-{background}.png" for s in ASSETS if s["role"] in CHANGED_SOURCE_ROLES for face in ("plus-z","minus-z","plus-x","three-quarter-plus-z","three-quarter-minus-z") for background in ("dark","bright","blue")}
+    expected_review_pngs={"neutral-board.png","gameplay-context.png","wall-grid-comparison.png","visibility-comparison.png"}|marker_faces|cue_faces|{s["role"]+"--"+s["variant"]+".png" for s in ASSETS}
     actual_review_metadata={p.name for p in review_dir.glob("*.json")}
     if actual_release!=expected_release: raise RuntimeError(f"generation release postcondition mismatch: {sorted(actual_release)}")
     if actual_sources!=expected_sources: raise RuntimeError(f"generation source postcondition mismatch: {sorted(actual_sources)}")
     if actual_manifests!=expected_manifests: raise RuntimeError(f"generation manifest postcondition mismatch: {sorted(actual_manifests)}")
     if actual_review_pngs!=expected_review_pngs or actual_review_metadata!={"hashes.v1.json","layout.v1.json","visibility.v1.json","contrast.v1.json","wall-grid.v1.json"}: raise RuntimeError("generation review postcondition mismatch")
     if {p.name for p in (root/"sets").glob("*.json")}!={"default-v1.json"}: raise RuntimeError("generation set postcondition mismatch")
-    print("GENERATE_OK release=0.0.7 assets=7 sources=7 manifests=7 release_files=17 review_pngs=23 review_metadata=5")
+    print(f"GENERATE_OK release={VERSION} assets=7 sources=10 manifests=10 release_files=17 review_pngs={len(actual_review_pngs)} review_metadata={len(actual_review_metadata)}")
 
 if __name__=="__main__": main()

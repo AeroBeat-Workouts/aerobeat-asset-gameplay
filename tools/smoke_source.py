@@ -20,7 +20,14 @@ if any(abs(value - 1) > 1e-7 for value in obj.scale):
     raise RuntimeError("source non-identity scale")
 if not obj.data.polygons or not obj.data.materials:
     raise RuntimeError("source mesh/material inventory is empty")
-if canonical == "athlete-marker/sphere-v1":
+rounded_counts = {"directional-arrow/rounded-outline-v1": (1928, 966), "any-note/outlined-circle-v1": (1788, 896), "guard/outlined-shield-v1": (1172, 588)}
+if canonical in rounded_counts:
+    expected_faces, expected_vertices = rounded_counts[canonical]
+    if len(obj.data.polygons) != expected_faces or len(obj.data.vertices) != expected_vertices or len(obj.data.materials) != 3:
+        raise RuntimeError("source rounded cue exact mesh/material counts failed")
+    if any(not material.use_backface_culling for material in obj.data.materials):
+        raise RuntimeError("source rounded cue backface culling is disabled")
+elif canonical == "athlete-marker/sphere-v1":
     if len(obj.data.polygons) != 168 or len(obj.data.vertices) != 86 or len(obj.data.materials) != 3:
         raise RuntimeError("source marker exact mesh/material counts failed")
     polygon_dots = [polygon.normal.dot(polygon.center) for polygon in obj.data.polygons]
