@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""Fail-closed validator for disposable Aero Rounded 0.0.8 candidate builds."""
+"""Fail-closed validator/finalizer for Aero Rounded 0.0.8 builds."""
 from __future__ import annotations
-import argparse, hashlib, json, math, struct, subprocess
+import argparse, hashlib, json, math, os, shutil, struct, subprocess, sys
 from collections import defaultdict, deque
 from pathlib import Path
+from subprocess_contract import run_checked
 
 RELEASE="0.0.8"
+APPROVED_COMMIT="ea776074ef3731c3090c3816f161c4ea95c22ddb"
+APPROVED_TREE="b354d02f0b8efbbcf8851d8600d01f8dda543985"
+EXPECTED_INVENTORY_SHA256="ac30d6b70cbae96115a7c97f5ad02b3da21fde7fb77f69083f1090e268bab5ac"
+EXPECTED_PROOF_SHA256="ba8a52cf747ec5ab58dcd024c90f813a5c477541892f71da698ead6a65ca4758"
 EXPECTED={
  "directional-arrow":("rounded-outline-v1",[.78,.78,.18],[0,0,0],69,1928,2432,"note_fill",True),
  "any-note":("outlined-circle-v1",[.70,.70,.18],[0,0,0],64,1788,2176,"note_fill",True),
@@ -198,8 +203,69 @@ def validate_cue(path,role):
   if not outer or min(outer)/max(outer)<.998: fail("any-note: circularity")
  return {"role":role,"samples":samples,"triangles":len(triangles),"ceiling":ceiling,"minimum_normal_dot":minimum_dot,"signed_volume":volume,"euler":euler}
 
-def validate(authority,candidate):
- if (authority/"release/raw/0.0.8").exists() or (authority/"review/0.0.8").exists(): fail("canonical 0.0.8 release/review must remain absent")
+def validate_release_inventory(release):
+ files={p.relative_to(release).as_posix():p for p in release.rglob("*") if p.is_file()}
+ expected={"inventory.v1.json","proof.v1.json","sets/default-v1.json"}
+ selected={role:spec[0] for role,spec in EXPECTED.items()}|{role:variant for role,variant in UNCHANGED}
+ for role,variant in selected.items(): expected|={f"{role}/{variant}.glb",f"manifests/{role}/{variant}.v1.json"}
+ if set(files)!=expected or len(files)!=17: fail(f"release inventory membership: {sorted(files)}")
+ inventory=load(release/"inventory.v1.json")
+ payload=[{"path":name,"bytes":files[name].stat().st_size,"sha256":sha(files[name])} for name in sorted(expected-{"inventory.v1.json","proof.v1.json"})]
+ if inventory!={"schema":"aerobeat.release-inventory/v1","release":RELEASE,"immutable":True,"expected_asset_count":7,"payload":payload}: fail("release inventory content/hash mismatch")
+ proof=load(release/"proof.v1.json")
+ if sha(release/"inventory.v1.json")!=EXPECTED_INVENTORY_SHA256 or sha(release/"proof.v1.json")!=EXPECTED_PROOF_SHA256: fail("release inventory/proof differs from audited disposable authority")
+ if proof.get("schema")!="aerobeat.release-proof/v1" or proof.get("release")!=RELEASE or proof.get("inventory_sha256")!=sha(release/"inventory.v1.json") or proof.get("generator")!="aerobeat-gameplay-generator-v7" or proof.get("blender")!="4.0.2": fail("release proof identity/hash mismatch")
+ claims=proof.get("claims",{})
+ if claims.get("changed_identities")!=["directional-arrow/rounded-outline-v1","any-note/outlined-circle-v1","guard/outlined-shield-v1"] or claims.get("byte_identical_predecessor_roles")!=["bomb","wall","track","athlete-marker"]: fail("release proof role claims")
+ return len(files),sum(p.stat().st_size for p in files.values())
+
+def validate_review(review):
+ all_paths=list(review.rglob("*"))
+ if any(path.is_dir() for path in all_paths): fail("review must be a flat file inventory")
+ files={p.relative_to(review).as_posix():p for p in all_paths if p.is_file()}
+ pngs={name:path for name,path in files.items() if path.suffix==".png"}; metadata={name:path for name,path in files.items() if path.suffix==".json"}
+ expected_metadata={"hashes.v1.json","layout.v1.json","visibility.v1.json","contrast.v1.json","wall-grid.v1.json"}
+ marker_faces={f"athlete-marker--sphere-v1--{face}-{background}.png" for face in ("plus-x","minus-x","plus-y","minus-y","plus-z","minus-z") for background in ("bright","dark")}
+ cue_faces={f"{role}--{spec[0]}--{face}-{background}.png" for role,spec in EXPECTED.items() for face in ("plus-z","minus-z","plus-x","three-quarter-plus-z","three-quarter-minus-z") for background in ("dark","bright","blue")}
+ individual={f"{role}--{variant}.png" for role,variant in ({role:spec[0] for role,spec in EXPECTED.items()}|{role:variant for role,variant in UNCHANGED}).items()}
+ expected_pngs={"neutral-board.png","gameplay-context.png","wall-grid-comparison.png","visibility-comparison.png"}|marker_faces|cue_faces|individual
+ if set(pngs)!=expected_pngs or set(metadata)!=expected_metadata or len(files)!=73: fail(f"review inventory png={sorted(pngs)} metadata={sorted(metadata)} files={len(files)}")
+ for name,path in pngs.items():
+  data=path.read_bytes()
+  if len(data)<33 or data[:8]!=b"\x89PNG\r\n\x1a\n" or data[12:16]!=b"IHDR": fail(f"{name}: invalid PNG")
+  width,height,depth,color=struct.unpack(">IIBB",data[16:26])
+  if (width,height,depth,color)!=(1600,900,8,2): fail(f"{name}: expected RGB 1600x900, got {(width,height,depth,color)}")
+ hashes=load(metadata["hashes.v1.json"])
+ expected_hashes=[{"path":name,"bytes":path.stat().st_size,"sha256":sha(path)} for name,path in sorted(pngs.items())]
+ if hashes.get("schema")!="aerobeat.review-hashes/v1" or hashes.get("release")!=RELEASE or hashes.get("resolution")!=[1600,900] or hashes.get("renderer")!="Blender 4.0.2 EEVEE" or hashes.get("files")!=expected_hashes: fail("review PNG hash manifest mismatch")
+ for key,name in (("layout","layout.v1.json"),("visibility","visibility.v1.json"),("contrast","contrast.v1.json"),("wall_grid","wall-grid.v1.json")):
+  expected={"path":name,"bytes":metadata[name].stat().st_size,"sha256":sha(metadata[name])}
+  if hashes.get(key)!=expected: fail(f"review metadata hash mismatch {name}")
+ layout=load(metadata["layout.v1.json"])
+ if layout.get("schema")!="aerobeat.review-layout/v1" or layout.get("release")!=RELEASE or layout.get("resolution")!=[1600,900] or set(layout.get("images",{}))!=set(pngs): fail("review layout inventory mismatch")
+ return len(files),sum(p.stat().st_size for p in files.values())
+
+def smoke_changed(authority,release):
+ blender=shutil.which("blender")
+ if not blender: fail("Blender missing for rounded smoke")
+ run_checked([blender,"--version"],operation="Blender version",marker="Blender 4.0.2")
+ for role,spec in EXPECTED.items():
+  variant=spec[0]; identity=f"{role}/{variant}"
+  for kind,path,script in (("source",authority/"source"/role/variant/f"{variant}.blend",authority/"tools/smoke_source.py"),("glb",release/role/f"{variant}.glb",authority/"tools/smoke_import.py")):
+   before=sha(path)
+   run_checked([blender,"--background","--factory-startup","--python",str(script),"--",str(path),identity],operation=f"rounded {kind} smoke {identity}",marker=f"SMOKE_OK kind={kind} identity={identity}",postcondition=lambda path=path,before=before:path.is_file() and sha(path)==before)
+
+def validate(authority,candidate,allow_canonical=False):
+ raw_exists=(authority/"release/raw/0.0.8").exists(); review_exists=(authority/"review/0.0.8").exists()
+ if allow_canonical:
+  candidate_raw=(candidate/"release/raw/0.0.8").exists(); candidate_review=(candidate/"review/0.0.8").exists()
+  if not candidate_raw or not candidate_review: fail("canonical validation requires both candidate 0.0.8 trees present")
+  if authority==candidate and (not raw_exists or not review_exists): fail("canonical in-place validation requires both authority 0.0.8 trees present")
+ elif raw_exists or review_exists: fail("canonical 0.0.8 release/review must remain absent")
+ approved_tree=subprocess.check_output(["git","rev-parse",f"{APPROVED_COMMIT}^{{tree}}"],cwd=authority,text=True).strip()
+ if approved_tree!=APPROVED_TREE: fail(f"approved authority tree mismatch {approved_tree}")
+ if subprocess.run(["git","merge-base","--is-ancestor",APPROVED_COMMIT,"HEAD"],cwd=authority).returncode!=0: fail("current HEAD does not descend from approved authority")
+ if subprocess.run(["git","diff","--exit-code",APPROVED_COMMIT,"--","tools/generate.py","source","manifests","sets","LICENSE.md"],cwd=authority,stdout=subprocess.PIPE,stderr=subprocess.STDOUT).returncode!=0: fail("authorized generation inputs differ from approved authority")
  for relative,expected in IMMUTABLE_GIT_TREES.items():
   actual=subprocess.check_output(["git","rev-parse",f"HEAD:{relative}"],cwd=authority,text=True).strip()
   if actual!=expected: fail(f"immutable predecessor Git tree drift {relative}: {actual}")
@@ -227,11 +293,23 @@ def validate(authority,candidate):
  setdoc=load(release/"sets/default-v1.json")
  if setdoc!=load(authority/"sets/default-v1.json"): fail("candidate set differs from staged set")
  if setdoc["roles"]!={role:spec[0] for role,spec in EXPECTED.items()}|{role:variant for role,variant in UNCHANGED}: fail("candidate set mapping")
- return results
+ release_stats=validate_release_inventory(release); review_stats=validate_review(candidate/"review"/RELEASE)
+ return results,release_stats,review_stats
 
 def main():
- parser=argparse.ArgumentParser(); parser.add_argument("--authority-root",default="."); parser.add_argument("--candidate-root",required=True); args=parser.parse_args()
- results=validate(Path(args.authority_root).resolve(),Path(args.candidate_root).resolve())
- print(json.dumps({"release":RELEASE,"cues":results},sort_keys=True))
+ parser=argparse.ArgumentParser(); parser.add_argument("--authority-root",default="."); parser.add_argument("--candidate-root",required=True); parser.add_argument("--canonical",action="store_true"); parser.add_argument("--smoke",action="store_true"); parser.add_argument("--finalize",action="store_true"); args=parser.parse_args()
+ authority=Path(args.authority_root).resolve(); candidate=Path(args.candidate_root).resolve()
+ if args.finalize and (not args.canonical or not args.smoke): fail("--finalize requires --canonical --smoke")
+ results,release_stats,review_stats=validate(authority,candidate,args.canonical)
+ if args.smoke: smoke_changed(authority,candidate/"release/raw"/RELEASE)
+ if args.finalize:
+  for base in (candidate/"release/raw"/RELEASE,candidate/"review"/RELEASE):
+   for path in sorted(base.rglob("*"),reverse=True): os.chmod(path,0o444 if path.is_file() else 0o555)
+   os.chmod(base,0o555)
+   if (os.stat(base).st_mode&0o777)!=0o555: fail(f"finalized directory mode mismatch {base}")
+   for path in base.rglob("*"):
+    expected_mode=0o444 if path.is_file() else 0o555
+    if (os.stat(path).st_mode&0o777)!=expected_mode: fail(f"finalized mode mismatch {path}")
+ print(json.dumps({"release":RELEASE,"cues":results,"raw":{"files":release_stats[0],"bytes":release_stats[1]},"review":{"files":review_stats[0],"bytes":review_stats[1]},"canonical":args.canonical,"finalized":args.finalize},sort_keys=True))
  print("ROUNDED_VALIDATE_OK release=0.0.8 cues=3 unchanged=4")
 if __name__=="__main__": main()

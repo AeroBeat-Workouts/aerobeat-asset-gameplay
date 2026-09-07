@@ -13,8 +13,9 @@ Canonical, cross-engine gameplay art for AeroBeat. This repository owns editable
 - `release/raw/0.0.4/` — immutable bidirectional-arrow predecessor retained byte-for-byte.
 - `release/raw/0.0.5/` — immutable wall-footprint predecessor retained byte-for-byte.
 - `release/raw/0.0.6/` — immutable rejected marker evidence with inward-wound faces; never regenerate or repair it in place.
-- `release/raw/0.0.7/` — append-only marker winding/culling successor: the complete seven-asset shape with only `athlete-marker/sphere-v1` re-authored.
-- `review/<version>/` — Blender-rendered visual evidence, calculated containment/contrast/wall-grid metadata, and hashes outside runtime releases; `review/0.0.1/` through `review/0.0.6/` remain unchanged.
+- `release/raw/0.0.7/` — immutable marker winding/culling predecessor: the complete seven-asset shape with only `athlete-marker/sphere-v1` re-authored.
+- `release/raw/0.0.8/` — immutable Aero Rounded successor: three new rounded/two-sided outlined cue identities plus four byte-identical `0.0.7` roles.
+- `review/<version>/` — Blender-rendered visual evidence, calculated containment/contrast/wall-grid metadata, and hashes outside runtime releases; `review/0.0.1/` through `review/0.0.8/` are immutable after finalization.
 - `tools/` — locally authored Blender/Python generation, export, review, and strict validation scripts.
 
 After a release validates, do not mutate it. Corrections require a new release version.
@@ -24,21 +25,27 @@ After a release validates, do not mutate it. Corrections require a new release v
 Requires Blender `4.0.2` and Python 3.
 
 ```bash
-# Immutable published baseline remains independently valid.
+# Immutable predecessor remains independently valid.
 python3 tools/validate.py --root . --release 0.0.7
 python3 tools/test_subprocess_contract.py --root .
 
-# Staged rounded successor: generates only disposable temporary candidates.
-python3 tools/reproducibility_rounded.py --root .
+# Finalized Aero Rounded successor validation (never regenerates).
+python3 tools/validate_rounded_candidate.py --authority-root . --candidate-root . --canonical --smoke
+python3 tools/test_rounded_adversarial.py --candidate-root .
 python3 tools/test_visible_window_budget.py
-# Against a disposable candidate root produced by tools/generate.py:
-python3 tools/validate_rounded_candidate.py --authority-root . --candidate-root /tmp/<candidate>
-python3 tools/test_rounded_adversarial.py --candidate-root /tmp/<candidate>
+
+# Disposable reproducibility remains available only while canonical 0.0.8 is absent.
+python3 tools/reproducibility_rounded.py --root .
+
+# The one-shot canonical driver is release-coder tooling, not a routine rebuild command.
+# It refuses existing canonical/staging paths, preserves the approved source authority,
+# runs Blender through tools/subprocess_contract.py, and promotes only raw/review output.
+python3 tools/build_rounded_release.py --root . --release 0.0.8
 ```
 
-## Staged Aero Rounded successor sources
+## Aero Rounded successor
 
-The mutable source tree and manifests stage Alternative B identities `directional-arrow/rounded-outline-v1`, `any-note/outlined-circle-v1`, and the sole canonical two-instance guard `guard/outlined-shield-v1`. They do **not** constitute a release: canonical `release/raw/0.0.8` and `review/0.0.8` must remain absent until independent QA/audit authorization. `tools/generate.py` supports explicit successor `0.0.8` only in a disposable output root, copies bomb/wall/track/athlete-marker from immutable `0.0.7`, and generates 68 temporary actual-GLB review renders spanning both camera faces, side and three-quarter views on dark/bright/blue fields.
+The mutable source tree and manifests retain the approved Alternative B identities `directional-arrow/rounded-outline-v1`, `any-note/outlined-circle-v1`, and the sole canonical two-instance guard `guard/outlined-shield-v1`. Canonical `release/raw/0.0.8` and `review/0.0.8` were built exactly once from approved source commit `ea776074ef3731c3090c3816f161c4ea95c22ddb` / tree `b354d02f0b8efbbcf8851d8600d01f8dda543985` after independent QA/audit authorization. The one-shot driver generated in an isolated staging root so the approved source snapshots remained unchanged, copied bomb/wall/track/athlete-marker from immutable `0.0.7`, validated before promotion, and refuses every existing canonical or recovery-staging path.
 
 Each changed cue is one closed connected geometric two-manifold with outward consistent winding, explicit per-corner normals, three 30-degree axial bevel segments per face, and an opaque two-sided projected `charcoal → white → charcoal → fill` surface. The outer charcoal keyline includes the face bevel: circle projected radii remain exactly `0.350 / 0.336 / 0.284 / 0.264`. Only arrow/any `note_fill` advertises `runtimeTintable:true`; guard `guard_fill`, `outline_white`, and `outline_charcoal` are fixed. Because the `0.086` band stack crosses the medial axis of the specified small convex outer fillets, arrow/guard independently erode their seven-anchor polygons and re-round each surviving/collapsed join; straight runs retain exact nominal widths and joins may widen but never narrow (within tessellation chord tolerance). The arrow shaft half-width is `.175`, yielding a `.178` fill shaft. Its corrected deterministic readability bounds are `≥35%` colored fill and `≥48%` interior after the white stroke; the circle remains exactly concentric.
 
@@ -50,9 +57,11 @@ The finalized `0.0.6` raw release contains exactly 17 files / 49,337 bytes with 
 
 The finalized `0.0.7` raw release contains exactly 17 files / 49,515 bytes with tree digest `d7ed901aaff35295d25a1d79ca5caa243c3ade848b1a2dc22d664f4d1f3b8f28`, inventory SHA-256 `ba3f40ad3b178da9845a74c89d3a89115d13fa5bd86b291bf41031df70eabbf4`, and proof SHA-256 `ebeb42ffaa351bcdbd7ae8120b62762d16d8957acd8a4b1286b324ffa5e6cfdb`. Its marker GLB is 5,496 bytes / 168 outward-CCW triangles with SHA-256 `b2316b8ec013e9d9087a0bd6d9e5dcef643a34132f9c51fc2526c68d317f7530`; geometric winding dot-centroid values range from `0.00005337978711546069` to `0.000139488119914183`, and 504 geometric-face/explicit-NORMAL dots range from `0.9485757794242599` to `0.9794479653887043`. Review `0.0.7` contains 23 culling-enabled RGB `1600 × 900` PNGs plus five JSON evidence files.
 
+The finalized `0.0.8` raw release contains exactly 17 files / 429,026 bytes with tree digest `0c2dcf8f00183ac9b33efa1c59c3d2a217687903127b86eb325372671279c549`, inventory SHA-256 `ac30d6b70cbae96115a7c97f5ad02b3da21fde7fb77f69083f1090e268bab5ac`, and proof SHA-256 `ba8a52cf747ec5ab58dcd024c90f813a5c477541892f71da698ead6a65ca4758`. Review `0.0.8` contains 68 RGB `1600 × 900` PNGs plus five JSON evidence files: 73 files / 77,758,435 bytes with tree digest `a9ef1d2c98623c0f75bdb680388be6503664b99ff39b3c67ddf85cdaaefae2c1` and hashes-manifest SHA-256 `37ac9db1d94e8425ea8ba235f0c3cf465e3a49f3cb349f3b9e0b8ea39b4d630b`. Both trees are finalized read-only; corrections require a new version.
+
 ## Coordinates and consumption
 
-Right-handed, **+Y up**, gameplay/local forward **−Z**. Assets are authored at identity rotation and unit scale with the specification-defined pivot. Consumers may independently mix variants through a set manifest and own runtime placement, role colors, direction rotation, timing tint, interval scaling, transparent sorting, outline passes, lane/row visuals, instancing, and world text. `guard/outlined-shield-v1` is the staged canonical model that consumers instance twice; immutable releases through `0.0.7` retain `guard/shield-v1`.
+Right-handed, **+Y up**, gameplay/local forward **−Z**. Assets are authored at identity rotation and unit scale with the specification-defined pivot. Consumers may independently mix variants through a set manifest and own runtime placement, role colors, direction rotation, timing tint, interval scaling, transparent sorting, outline passes, lane/row visuals, instancing, and world text. `guard/outlined-shield-v1` is the `0.0.8` canonical model that consumers instance twice; immutable releases through `0.0.7` retain `guard/shield-v1`.
 
 ## Rights
 
