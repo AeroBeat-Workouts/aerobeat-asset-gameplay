@@ -178,7 +178,7 @@ def validate_cue(path,role):
   for label,boundary in (("silhouette",silhouette),("outer-white",outer_white),("inner-white",inner_white),("fill",fill_boundary)): assert_symmetric(boundary,f"{role} {label}")
  if role=="directional-arrow":
   shaft_half=max(abs(x) for x,y in fill_boundary if y<0); shaft_width=2*shaft_half
-  colored_ratio=assert_area_ratio(fill_boundary,silhouette,.35,"directional-arrow colored fill"); readability_ratio=assert_area_ratio(inner_white,silhouette,.42,"directional-arrow readability")
+  colored_ratio=assert_area_ratio(fill_boundary,silhouette,.35,"directional-arrow colored fill"); readability_ratio=assert_area_ratio(inner_white,silhouette,.48,"directional-arrow readability")
   if abs(shaft_half-.089)>2e-5 or shaft_width<.170 or shaft_width<.145: fail(f"directional-arrow: straight shaft/neck readability {shaft_width}")
   tip=max(range(len(fill_boundary)),key=lambda index:fill_boundary[index][1]); tip_radius=circumradius(fill_boundary[(tip-3)%samples],fill_boundary[tip],fill_boundary[(tip+3)%samples])
   if tip_radius<.045-2e-5: fail(f"directional-arrow: fill tip radius {tip_radius}")
@@ -218,7 +218,7 @@ def validate(authority,candidate):
   if manifest["geometry"]["triangle_count"]!=spec[4] or manifest["geometry"]["triangle_budget"]!=spec[5] or manifest["coordinates"]["visible_face"]!="both +Z/-Z" or manifest["dependencies"]!=[] or manifest["provenance"]["external_assets"]!=[] or manifest["provenance"]["network"] is not False: fail(f"{role}: manifest geometry/face/provenance contract")
   contract=manifest["materials"]["contract"]
   if role in ("directional-arrow","guard") and (contract.get("boundary_construction")!="independent-inset-anchor-morphological-erosion" or contract.get("cumulative_cap_offsets")!=[.014,.066,.086] or contract.get("join_policy")!="collapsed joins re-rounded independently; bands may widen but never narrow"): fail(f"{role}: morphology metadata")
-  if role=="directional-arrow" and any(contract.get(key)!=value for key,value in {"outer_shaft_half_width":.175,"nominal_fill_shaft_width":.178,"minimum_fill_shaft_width":.170,"minimum_fill_neck_width":.145,"minimum_fill_tip_radius":.045,"minimum_colored_fill_area_ratio":.35,"minimum_interior_readability_area_ratio":.42}.items()): fail("directional-arrow: readability metadata")
+  if role=="directional-arrow" and any(contract.get(key)!=value for key,value in {"outer_shaft_half_width":.175,"nominal_fill_shaft_width":.178,"minimum_fill_shaft_width":.170,"minimum_fill_neck_width":.145,"minimum_fill_tip_radius":.045,"minimum_colored_fill_area_ratio":.35,"minimum_interior_readability_area_ratio":.48}.items()): fail("directional-arrow: readability metadata")
  for role,variant in UNCHANGED:
   current=release/role/f"{variant}.glb"; predecessor=authority/"release/raw/0.0.7"/role/f"{variant}.glb"
   if current.read_bytes()!=predecessor.read_bytes(): fail(f"{role}: selected GLB changed")

@@ -34,7 +34,7 @@ def main():
   doc,binary=parse_glb(source); doc["materials"][0]["doubleSided"]=True; rebuild(target,doc,binary); must_reject(target,"directional-arrow","disabled culling")
   doc,binary=parse_glb(source); doc["buffers"][0]["uri"]="external.bin"; rebuild(target,doc,binary); must_reject(target,"directional-arrow","external dependency")
   doc,binary=parse_glb(source); primitive=doc["meshes"][0]["primitives"][0]; doc["accessors"][primitive["indices"]]["count"]-=3; rebuild(target,doc,binary); must_reject(target,"directional-arrow","triangle count drift")
- outer=[(0,0),(1,0),(1,1),(0,1)]; narrowed=[(.005,.005),(.995,.005),(.995,.995),(.005,.995)]; widened=[(.1,.1),(.9,.1),(.9,.9),(.1,.9)]
+ outer=[(0,0),(1,0),(1,1),(0,1)]; narrowed=[(.005,.005),(.995,.005),(.995,.995),(.005,.995)]; widened=[(.1,.1),(.9,.1),(.9,.9),(.1,.9)]; readable=[(.25,.05),(.75,.05),(.75,.95),(.25,.95)]
  must_fail(lambda:assert_naive_radii_positive([.05,.055,.06],.086),"naive negative radius")
  must_fail(lambda:assert_simple_polygon([(0,0),(1,1),(0,1),(1,0)],"synthetic"),"self intersection")
  must_fail(lambda:assert_non_narrowing_band(outer,narrowed,.014,"synthetic straight/join"),"narrow straight run/join")
@@ -42,6 +42,8 @@ def main():
  must_fail(lambda:assert_single_fill_boundary([outer,widened],"synthetic"),"disconnected fill")
  must_fail(lambda:require(circumradius((-.02,0),(0,.02),(.02,0))>=.045,"tip radius"),"small fill tip")
  must_fail(lambda:assert_area_ratio([(.45,.45),(.55,.45),(.55,.55),(.45,.55)],outer,.35,"synthetic fill"),"fill area")
+ assert_area_ratio(readable,outer,.35,"synthetic colored fill")
+ must_fail(lambda:assert_area_ratio(readable,outer,.48,"synthetic interior readability"),"interior readability area")
  must_fail(lambda:assert_symmetric([(0,0),(1,0),(0,1)],"synthetic"),"symmetry")
- print("ROUNDED_ADVERSARIAL_OK mutations=13")
+ print("ROUNDED_ADVERSARIAL_OK mutations=14")
 if __name__=="__main__": main()
