@@ -42,9 +42,13 @@ python3 tools/test_visible_window_budget.py
 # verifies the semantic arrow fingerprint, preserves predecessors, and removes temps.
 python3 tools/reproducibility_rounded.py --root .
 
-# The one-shot canonical driver is armed release tooling, not a rebuild command.
-# The prior authorization was consumed by the recorded argparse failure; do not invoke it
-# without a new explicit audited authorization. Preparation and QA create no canonical target.
+# Prepared uniform-wall source/candidate gates; neither creates a canonical target.
+python3 tools/test_uniform_wall_release_preflight.py
+python3 tools/reproducibility_uniform_wall.py --root .
+
+# tools/build_uniform_wall_release.py is a pinned one-shot canonical driver, not a rebuild command.
+# Do not invoke it until the independent m2ep audit explicitly authorizes exactly one 0.0.10 build.
+# Once consumed, any retry requires recovery/audit rather than regeneration.
 ```
 
 ## Aero Rounded successor
