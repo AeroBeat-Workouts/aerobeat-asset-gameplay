@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import shutil
 import struct
 import subprocess
 import sys
+import tarfile
 import tempfile
 from pathlib import Path
+
+LEGACY_SOURCE_COMMIT = "2f93b563e1363cf61e27d5e0b893b428b76dc569"
 
 from subprocess_contract import run_checked
 from validate import IMMUTABLE_CURRENT_TREES, assert_immutable_current_tree, assert_marker_geometry
@@ -115,6 +119,14 @@ raise SystemExit(0)
             encoding="utf-8",
         )
         fake.chmod(0o755)
+        legacy_root = Path(temp) / "legacy-authority"
+        legacy_root.mkdir()
+        archive = subprocess.check_output(["git", "archive", "--format=tar", LEGACY_SOURCE_COMMIT], cwd=root)
+        with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as bundle:
+            bundle.extractall(legacy_root, filter="data")
+        subprocess.run(["git", "init", "-q"], cwd=legacy_root, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=legacy_root, check=True)
+        subprocess.run(["git", "-c", "user.name=AeroBeat QA", "-c", "user.email=qa@invalid", "commit", "-qm", "legacy fixture"], cwd=legacy_root, check=True)
         base_env = os.environ.copy()
         base_env["PATH"] = temp + os.pathsep + base_env.get("PATH", "")
         marker = "GENERATE_OK release=0.0.7 assets=7 sources=7 manifests=7 release_files=17 review_pngs=23 review_metadata=5"
@@ -126,7 +138,7 @@ raise SystemExit(0)
             env = base_env.copy(); env["FAKE_BLENDER_SCENARIO"] = scenario
             require_contract_failure([str(fake), "--operation"], f"fake generation {scenario}", marker, env, expected)
             completed = subprocess.run(
-                [sys.executable, str(root / "tools/validate.py"), "--root", str(root), "--release", "0.0.7"],
+                [sys.executable, str(legacy_root / "tools/validate.py"), "--root", str(legacy_root), "--release", "0.0.7"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -135,7 +147,7 @@ raise SystemExit(0)
             if completed.returncode == 0 or expected not in completed.stdout:
                 raise AssertionError(f"validator accepted fake Blender {scenario}:\n{completed.stdout}")
             reproduced = subprocess.run(
-                [sys.executable, str(root / "tools/reproducibility.py"), "--root", str(root), "--release", "0.0.7"],
+                [sys.executable, str(legacy_root / "tools/reproducibility.py"), "--root", str(legacy_root), "--release", "0.0.7"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,

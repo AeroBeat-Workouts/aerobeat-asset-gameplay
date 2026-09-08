@@ -27,6 +27,11 @@ if canonical in rounded_counts:
         raise RuntimeError("source rounded cue exact mesh/material counts failed")
     if any(not material.use_backface_culling for material in obj.data.materials):
         raise RuntimeError("source rounded cue backface culling is disabled")
+elif canonical == "wall/red-glass-v1":
+    if len(obj.data.polygons) != 12 or len(obj.data.vertices) != 8 or len(obj.data.materials) != 1 or obj.data.materials[0].name != "mat/red_glass":
+        raise RuntimeError("source uniform wall exact mesh/material counts failed")
+    if not obj.data.materials[0].use_backface_culling:
+        raise RuntimeError("source uniform wall backface culling is disabled")
 elif canonical == "athlete-marker/sphere-v1":
     if len(obj.data.polygons) != 168 or len(obj.data.vertices) != 86 or len(obj.data.materials) != 3:
         raise RuntimeError("source marker exact mesh/material counts failed")
