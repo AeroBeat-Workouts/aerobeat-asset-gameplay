@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """Fail-closed validator/finalizer for Aero Rounded 0.0.8 builds."""
 from __future__ import annotations
-import argparse, hashlib, json, math, os, shutil, struct, subprocess, sys
+import argparse, hashlib, json, math, os, shutil, struct, subprocess, sys, tempfile
 from collections import defaultdict, deque
 from pathlib import Path
 from subprocess_contract import run_checked
 
 RELEASE="0.0.8"
-APPROVED_COMMIT="ea776074ef3731c3090c3816f161c4ea95c22ddb"
-APPROVED_TREE="b354d02f0b8efbbcf8851d8600d01f8dda543985"
-EXPECTED_INVENTORY_SHA256="ac30d6b70cbae96115a7c97f5ad02b3da21fde7fb77f69083f1090e268bab5ac"
-EXPECTED_PROOF_SHA256="ba8a52cf747ec5ab58dcd024c90f813a5c477541892f71da698ead6a65ca4758"
+APPROVED_COMMIT="ff34f05f376e57d425430afc2520c0512a53ab73"
+APPROVED_TREE="339dd8031184d11bf20272a40353c022df71d8b4"
+EXPECTED_INVENTORY_SHA256="367d5efee059144175c118df905b37cfe510a8b6ef42b727928d9494108c6e73"
+EXPECTED_PROOF_SHA256="ba0c00d5497a73a24281e5bad25b2c305b676e710c871434cf8b28b2b58190db"
 EXPECTED={
  "directional-arrow":("rounded-outline-v1",[.78,.78,.18],[0,0,0],69,1928,2432,"note_fill",True),
  "any-note":("outlined-circle-v1",[.70,.70,.18],[0,0,0],64,1788,2176,"note_fill",True),
@@ -37,6 +37,14 @@ IMMUTABLE_GIT_TREES={
 def fail(message): raise AssertionError(message)
 def sha(path): return hashlib.sha256(path.read_bytes()).hexdigest()
 def load(path): return json.loads(path.read_text(encoding="utf-8"))
+def semantic_scene_fingerprint(authority,source):
+ with tempfile.TemporaryDirectory(prefix="aerobeat-scene-fingerprint-") as directory:
+  output=Path(directory)/"fingerprint.json"; blender=shutil.which("blender")
+  if not blender: fail("Blender missing for semantic scene fingerprint")
+  run_checked([blender,"--background","--factory-startup","--python",str(authority/"tools/blender_scene_fingerprint.py"),"--",str(source),str(output)],operation=f"semantic scene fingerprint {source}",marker="SCENE_FINGERPRINT_OK",postcondition=lambda:output.is_file() and output.stat().st_size>0)
+  document=load(output)
+  if document.get("schema")!="aerobeat.blender-semantic-scene-fingerprint/v1" or document.get("blender")!="4.0.2": fail("semantic scene fingerprint identity")
+  return sha(output),document
 def parse_glb(path):
  data=path.read_bytes(); magic,version,total=struct.unpack_from("<4sII",data,0)
  if (magic,version,total)!=(b"glTF",2,len(data)): fail(f"{path}: invalid GLB")
@@ -89,6 +97,10 @@ def assert_area_ratio(inner,outer,minimum,label):
  return ratio
 def assert_single_fill_boundary(boundaries,label):
  if len(boundaries)!=1: fail(f"{label}: disconnected fill")
+def assert_directional_arrow_contract(contract):
+ if contract.get("boundary_construction")=="independent-inset-anchor-morphological-erosion" or contract.get("join_policy")=="collapsed joins re-rounded independently; bands may widen but never narrow": fail("directional-arrow: superseded morphology contract is forbidden")
+ if contract.get("boundary_construction")!="fill-first-analytic-rounded-signed-offsets" or contract.get("signed_outset_levels")!=[0,.020,.072,.086] or contract.get("cumulative_cap_offsets")!=[.014,.066,.086] or contract.get("join_policy")!="one analytic rounded family; no radius clamps or independently re-rounded joins": fail("directional-arrow: signed-offset metadata")
+ if any(contract.get(key)!=value for key,value in {"outer_shaft_half_width":.175,"nominal_fill_shaft_width":.178,"minimum_fill_shaft_width":.170,"minimum_fill_neck_width":.145,"minimum_fill_tip_radius":.045,"minimum_colored_fill_area_ratio":.35,"minimum_interior_readability_area_ratio":.48}.items()): fail("directional-arrow: readability metadata")
 
 def validate_cue(path,role):
  variant,dims,pivot,samples,expected_triangles,ceiling,fill_role,tintable=EXPECTED[role]
@@ -281,10 +293,13 @@ def validate(authority,candidate,allow_canonical=False):
    if files["source_sha256"]!=sha(source) or files["source_bytes"]!=source.stat().st_size or files["release_sha256"]!=sha(glb) or files["release_bytes"]!=glb.stat().st_size: fail(f"{role}: manifest hash/byte provenance")
   comparable=lambda document:{**document,"files":{key:value for key,value in document["files"].items() if key not in ("source_sha256","source_bytes")}}
   if comparable(manifest)!=comparable(staged): fail(f"{role}: staged/generated manifest semantic drift")
+  if role=="directional-arrow":
+   staged_fingerprint,staged_scene=semantic_scene_fingerprint(authority,staged_source); candidate_fingerprint,candidate_scene=semantic_scene_fingerprint(authority,candidate_source)
+   if staged_fingerprint!=candidate_fingerprint or staged_scene!=candidate_scene: fail("directional-arrow: staged/generated semantic scene fingerprint drift")
   if manifest["geometry"]["triangle_count"]!=spec[4] or manifest["geometry"]["triangle_budget"]!=spec[5] or manifest["coordinates"]["visible_face"]!="both +Z/-Z" or manifest["dependencies"]!=[] or manifest["provenance"]["external_assets"]!=[] or manifest["provenance"]["network"] is not False: fail(f"{role}: manifest geometry/face/provenance contract")
   contract=manifest["materials"]["contract"]
-  if role in ("directional-arrow","guard") and (contract.get("boundary_construction")!="independent-inset-anchor-morphological-erosion" or contract.get("cumulative_cap_offsets")!=[.014,.066,.086] or contract.get("join_policy")!="collapsed joins re-rounded independently; bands may widen but never narrow"): fail(f"{role}: morphology metadata")
-  if role=="directional-arrow" and any(contract.get(key)!=value for key,value in {"outer_shaft_half_width":.175,"nominal_fill_shaft_width":.178,"minimum_fill_shaft_width":.170,"minimum_fill_neck_width":.145,"minimum_fill_tip_radius":.045,"minimum_colored_fill_area_ratio":.35,"minimum_interior_readability_area_ratio":.48}.items()): fail("directional-arrow: readability metadata")
+  if role=="directional-arrow": assert_directional_arrow_contract(contract)
+  elif role=="guard" and (contract.get("boundary_construction")!="independent-inset-anchor-morphological-erosion" or contract.get("cumulative_cap_offsets")!=[.014,.066,.086] or contract.get("join_policy")!="collapsed joins re-rounded independently; bands may widen but never narrow"): fail("guard: morphology metadata")
  for role,variant in UNCHANGED:
   current=release/role/f"{variant}.glb"; predecessor=authority/"release/raw/0.0.7"/role/f"{variant}.glb"
   if current.read_bytes()!=predecessor.read_bytes(): fail(f"{role}: selected GLB changed")

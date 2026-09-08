@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse, hashlib, json, shutil, sys, tempfile
 from pathlib import Path
 from subprocess_contract import run_checked
+from test_uniform_arrow import scene_fingerprint
 
 def sha(path): return hashlib.sha256(path.read_bytes()).hexdigest()
 def inventory(root,relative):
@@ -28,12 +29,15 @@ def main():
         for build in builds:
             prepare(root,build)
             run_checked([blender,"--background","--factory-startup","--python",str(root/"tools/generate.py"),"--","--output-root",str(build),"--release","0.0.8"],operation=f"uniform arrow generation {build.name}",marker="GENERATE_OK release=0.0.8 assets=7 sources=10 manifests=10 release_files=17 review_pngs=68 review_metadata=5")
-            run_checked([sys.executable,str(root/"tools/test_uniform_arrow.py"),"--authority-root",str(root),"--candidate-root",str(build),"--skip-staged-match"],operation=f"uniform arrow validation {build.name}",marker="UNIFORM_ARROW_OK geometry_bands=3 features=4 raster_checks=2592 adversaries=3 rotations=8 colors=3 scales=3 dprs=3 unchanged_glbs=6")
+            run_checked([sys.executable,str(root/"tools/test_uniform_arrow.py"),"--authority-root",str(root),"--candidate-root",str(build)],operation=f"uniform arrow validation {build.name}",marker="UNIFORM_ARROW_OK geometry_bands=3 features=4 raster_checks=5184 adversaries=3 rotations=8 colors=3 scales=3 dprs=3 unchanged_glbs=6")
         # Runtime bytes are deterministic; Blender review PNG container bytes are
         # evidence only and retain the repository's existing non-reproducibility scope.
         compared=(Path("release/raw/0.0.8"),)
         for relative in compared:
             if inventory(builds[0],relative)!=inventory(builds[1],relative): raise AssertionError(f"nondeterministic candidate bytes: {relative}")
+        source_relative=Path("source/directional-arrow/rounded-outline-v1/rounded-outline-v1.blend")
+        fingerprints=[scene_fingerprint(root,base/source_relative)[0] for base in (root,*builds)]
+        if len(set(fingerprints))!=1: raise AssertionError(f"nondeterministic semantic scene fingerprints: {fingerprints}")
         manifest_relative=Path("manifests/directional-arrow/rounded-outline-v1.v1.json")
         documents=[json.loads((base/manifest_relative).read_text(encoding="utf-8")) for base in (root,*builds)]
         for document in documents:
@@ -41,5 +45,5 @@ def main():
         if documents[0]!=documents[1] or documents[1]!=documents[2]: raise AssertionError("staged arrow manifest semantic drift")
     after=immutable(root)
     if before!=after: raise AssertionError("immutable raw/review 0.0.1-0.0.8 drift")
-    print("UNIFORM_ARROW_REPRODUCIBILITY_OK builds=2 raw_files=17 review_evidence_files_each=73 immutable_trees=16")
+    print(f"UNIFORM_ARROW_REPRODUCIBILITY_OK builds=2 raw_files=17 review_evidence_files_each=73 immutable_trees=16 semantic_scene_fingerprint={fingerprints[0]}")
 if __name__=="__main__": main()

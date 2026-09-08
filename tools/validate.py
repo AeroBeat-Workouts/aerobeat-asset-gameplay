@@ -456,7 +456,7 @@ def validate(root,release,smoke=True,check_git=True,check_immutable_review=True)
    entry=layout["images"].get(image,{})
    if entry.get("kind")!="athlete-marker-face-contrast" or entry.get("camera_face")!=face or entry.get("background")!=background.upper() or entry.get("backface_culling") is not True or entry.get("embedded_normals") is not True or entry.get("exterior_visible") is not True or len(entry.get("objects",[]))!=1: fail(f"athlete-marker: missing truthful culling {face}/{background} layout evidence")
  # Tool/source policy: no third-party imports, network calls, asset loading, textures, fonts, or engine metadata.
- allowed={"argparse","ast","collections","hashlib","json","math","os","pathlib","shutil","struct","subprocess","subprocess_contract","validate","validate_rounded_candidate","sys","tempfile","bpy","bpy_extras","mathutils","__future__"}
+ allowed={"argparse","ast","collections","hashlib","json","math","os","pathlib","shutil","struct","subprocess","subprocess_contract","test_uniform_arrow","validate","validate_rounded_candidate","sys","tempfile","bpy","bpy_extras","mathutils","__future__"}
  for p in sorted((root/"tools").glob("*.py")):
   tree=ast.parse(p.read_text(encoding="utf-8"),filename=str(p))
   imports=set()

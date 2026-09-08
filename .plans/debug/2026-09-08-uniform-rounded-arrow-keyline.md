@@ -101,3 +101,75 @@ Candidate topology remains 69 samples / 1,928 triangles, Euler `2`, one connecte
 Staged arrow source SHA-256 is `8d3dd7fbc940de442b57bbadd5f471ed95c85195fcbce04b0664bd59386127c2` (`561,492` bytes); staged manifest SHA-256 is `98cb5aab2719892e3a018a57869fce364961ff0d66b40d01e0f4e05447ed8c7a`; isolated candidate GLB SHA-256 is `75435bc79c0278da5488ab05d1a97ac409cdab390e10483748c30a5aa67ad7e4` (`152,916` bytes). Only the staged arrow `.blend`/manifest change among source/manifest asset identities. Six non-arrow candidate GLBs are byte-identical to immutable `0.0.8`; circle, guard, bomb, wall, track, and athlete-marker staged assets remain unchanged.
 
 Immutable raw/review `0.0.1` through `0.0.8` pass a before/after 16-tree path/size/SHA inventory comparison. Canonical `0.0.8` remains exact: raw Git tree `e26ec4e8278860c60568bd2a89983cd09555ee75`, 17 files / 429,026 bytes, inventory `ac30d6b70cbae96115a7c97f5ad02b3da21fde7fb77f69083f1090e268bab5ac`, proof `ba8a52cf747ec5ab58dcd024c90f813a5c477541892f71da698ead6a65ca4758`; review Git tree `df080ea57c99bb50697f14e891edad7f53dbda2a`, 73 files / 77,758,435 bytes. No canonical build driver ran and no permanent successor path was created.
+
+## QA repair diagnosis (t6ty)
+
+### Exact Observed Failure
+
+Independent QA at source commit `ff34f05f376e57d425430afc2520c0512a53ab73` / tree `339dd8031184d11bf20272a40353c022df71d8b4` observed four blockers. The default uniform-arrow test rejects staged/generated `.blend` byte drift (`8d3dd7…` staged versus `694882…` isolated) even though dense geometry passes. Canonical candidate validation stops at `authorized generation inputs differ from approved authority`. If that check is bypassed, validator line 286 still requires `independent-inset-anchor-morphological-erosion` for the arrow. Finally, the raster oracle chooses the single probe nearest nominal per feature, classifies material labels independently of fill RGB, and permits up to `1.55*pitch+.0005` (`0.0256875` at the coarsest case), wider than the `0.014` outer band.
+
+### Expected Behavior
+
+Blender container metadata may vary without changing the authored scene. Staged and isolated sources therefore need an exact deterministic semantic scene fingerprint over scene/object/mesh/material/custom-property state, while generated runtime GLB and inventory bytes remain exact. Generation inputs must be pinned to the repaired authority above. Directional-arrow validation must require the fill-first signed-offset contract and reject its superseded morphology contract, while guard retains its independently approved morphology. Raster QA must exercise worst-case probes for every feature across every rotation/color/scale/DPR combination, use colors with explicit contrast, enforce a fixed world-space tolerance materially below `0.014`, and reject immutable and synthetic red fixtures.
+
+### Execution Path
+
+`generate.py` writes a semantically stable Blender scene but Blender serializes nondeterministic container metadata; `test_uniform_arrow.py` compares those raw bytes before inspecting semantics. `validate_rounded_candidate.py` still pins the original `ea7760…` generation authority and applies one morphology assertion to both arrow and guard. `raster_matrix()` then selects only the closest-to-target boundary point in each feature and accepts a pitch-scaled error larger than the narrowest band.
+
+### Most Likely Root Cause
+
+The proof layers were not revised with the geometry model. A byte-level source proxy, original-release authority pin, shared arrow/guard morphology assertion, and best-case pixel heuristic survived after the arrow changed to a fill-first signed-offset family. QA evidence directly identifies each stale assumption; the passing dense geometry and runtime reproducibility contradict a geometry-generation defect.
+
+### Alternative Hypotheses
+
+1. The staged source contains a semantic difference: possible until a scene fingerprint compares all relevant Blender semantics, but contradicted by identical generated GLB bytes and dense contour measurements.
+2. The authority failure indicates dirty generation inputs: contradicted by the clean `ff34f05…` repair commit/tree; the validator literal still names the older approved commit.
+3. The old morphology contract is harmless prose: contradicted by executable line 286.
+4. Coarse raster tolerance is unavoidable: contradicted by deterministic subpixel coverage, which can bound world-space quantization well below `0.014`.
+
+### Why Previous Fixes Failed
+
+The first repair correctly changed geometry and added red/green measurements, but reused proof mechanisms designed for raw Blender byte identity, original `0.0.8` generation, morphology-only joins, and one representative raster sample. Those mechanisms either reject valid semantics or overstate raster coverage.
+
+### Unknowns
+
+The final semantic fingerprint and worst-case raster tolerance must be measured against two fresh Blender builds. The tolerance must remain above deterministic sampling/chord error yet below the `0.014` band and must reject the immutable/bulged fixtures.
+
+### Minimal Reproduction
+
+Generate one isolated candidate from `ff34f05…`; run `test_uniform_arrow.py` without `--skip-staged-match`, then run `validate_rounded_candidate.py --canonical --smoke`. Inspect line 286 and the `raster_matrix()` probe/tolerance logic. These reproduce all four blockers without mutating a canonical release.
+
+### Proposed Verification
+
+Compare canonical semantic fingerprint JSON/SHA for staged and two isolated arrow sources; byte-compare both generated raw inventories; require the exact repaired commit/tree authority; assert arrow signed-offset metadata and explicit old-contract rejection; run every min/max feature probe through all matrix dimensions with a fixed sub-band tolerance; require immutable `0.0.8` and each targeted bulge fixture to fail; then run all requested smoke, manifold, material, readability, adversarial, immutable, and reproducibility gates.
+
+### Recommended Fix
+
+Add a Blender-backed semantic scene fingerprint, replace raw staged-source equality with exact fingerprint equality, update the authority constants to `ff34f05…` / `339dd8…`, split arrow signed-offset and guard morphology validation with an explicit old-arrow rejection, and replace best-probe raster checking with min/max worst-case probes, meaningful color contrast assertions, deterministic fine subpixel coverage, and a fixed tolerance below `0.014`.
+
+### Debugging Record
+
+```text
+Problem: Rounded-arrow proof authorities lag the repaired signed-offset source.
+Observed symptom: Raw Blend mismatch, stale authority rejection, stale morphology assertion, and best-case raster tolerance up to 0.0256875.
+Root cause: Proof mechanisms retained assumptions from the original rounded release and morphology repair.
+Evidence: Exact wv25 QA FAIL comment plus current test/validator source at ff34f05.
+Failed approaches: Raw Blender-byte source equality and representative-probe pitch-scaled raster acceptance.
+Corrective action: Semantic scene fingerprint, repaired authority pin, signed-offset contract, and fixed-tolerance worst-case raster matrix.
+Verification test: Default no-skip test, canonical smoke validation, two isolated builds, Blender smokes, adversarial/red fixtures, immutable inventories.
+Related files/components: tools/test_uniform_arrow.py, tools/reproducibility_uniform_arrow.py, tools/validate_rounded_candidate.py, new Blender fingerprint tool, README/debug report.
+Remaining uncertainty: Measured fingerprint SHA and tight raster tolerance, resolved by fresh builds.
+```
+
+## t6ty repair result
+
+All four QA blockers are closed in staged tooling without changing any asset geometry or immutable raw/review tree.
+
+1. **Semantic source determinism:** `tools/blender_scene_fingerprint.py` canonicalizes scene/collection/object transforms and ownership, exact mesh coordinates/topology/material assignment/custom-normal presence, materials and node graphs, worlds, actions, and custom properties. Blender-recalculated load-time vertex/loop normal values are deliberately excluded after repeated opens demonstrated low-bit scheduling drift; generated GLB normal bytes remain exact and are independently validated. The staged source and both isolated builds produce exact semantic fingerprint SHA-256 `6ec9138f82933e7b94e4732f0b1ea038e85c5e80565ab404ce443c36a249ac11`. Raw `.blend` hashes are not asserted. Both isolated 17-file runtime inventories match byte-for-byte; arrow GLB remains `75435bc79c0278da5488ab05d1a97ac409cdab390e10483748c30a5aa67ad7e4`, repaired inventory is `367d5efee059144175c118df905b37cfe510a8b6ef42b727928d9494108c6e73`, and repaired proof is `ba0c00d5497a73a24281e5bad25b2c305b676e710c871434cf8b28b2b58190db`.
+2. **Generation-input authority:** candidate validation now pins exact repaired authority commit `ff34f05f376e57d425430afc2520c0512a53ab73` / tree `339dd8031184d11bf20272a40353c022df71d8b4` and fails if `tools/generate.py`, `source/`, `manifests/`, `sets/`, or `LICENSE.md` differ.
+3. **Signed-offset contract:** directional-arrow validation exclusively requires `fill-first-analytic-rounded-signed-offsets`, levels `[0,.020,.072,.086]`, and the no-clamp single-family join policy. A dedicated red fixture proves the superseded arrow morphology contract rejects. Guard retains its separate morphology assertion.
+4. **Worst-case raster oracle:** each of three bands now contributes minimum and maximum probes for all four feature classes (`24` probes). Every probe runs through eight rotations, three explicitly contrast-checked RGB fills, three scales, and DPR `1/2/3`, for `5,184` green checks. Coverage step is at most `0.00025`; fixed acceptance tolerance is `0.002`, seven times below the `0.014` narrowest band. Immutable `0.0.8` fails both geometry and raster red-before checks, and each of three `0.004` shoulder-bulge fixtures fails both geometry and raster.
+
+Final staged measurements remain outer charcoal `0.013880243..0.014000078`, white `0.051555088..0.052000000`, and inner charcoal `0.019828869..0.020000097`; raster range is `0.013750000..0.052177734`. Fill/interior readability remain `45.4118017% / 56.9347420%`. Topology remains 69 samples, 1,928 triangles, Euler 2, one closed connected two-manifold, signed volume `0.0633066764`, and minimum explicit-normal dot `0.999999999996`.
+
+Passing gates: Python compile; default `test_uniform_arrow.py` with no skips; `validate_rounded_candidate.py --canonical --smoke`; two-isolated-build `reproducibility_uniform_arrow.py`; all three staged source and three candidate GLB Blender 4.0.2 smokes; 14 rounded adversaries plus three raster/geometry bulges and the old-contract red fixture; immutable `validate.py --release 0.0.7`; subprocess fatal-signature tests; visible-window budget; diff hygiene; and 16 immutable raw/review before/after inventories. No canonical driver ran, no permanent `0.0.9` exists, and raw/review `0.0.1`–`0.0.8` remain unchanged.
