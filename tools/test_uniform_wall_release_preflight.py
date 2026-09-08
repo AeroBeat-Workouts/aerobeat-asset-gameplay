@@ -15,8 +15,8 @@ def expect_exit(module,root,message,*,diff_code=0):
    if message not in str(error):raise AssertionError(f"wrong preflight rejection: {error}") from error
   else:raise AssertionError(f"builder accepted preflight defect: {message}")
 def main():
- root=Path(__file__).resolve().parents[1];module=load_builder(root);candidate=Path("/tmp/aerobeat-wall-audit-candidate-cr6wjw_1")
- if not candidate.is_dir():raise SystemExit("retained audited candidate is required for non-generating preflight")
+ parser=argparse.ArgumentParser();parser.add_argument("--root",default=Path(__file__).resolve().parents[1]);parser.add_argument("--candidate-root");arguments=parser.parse_args();root=Path(arguments.root).resolve();module=load_builder(root);candidate=Path(arguments.candidate_root).resolve() if arguments.candidate_root else root
+ if not (candidate/"release/raw/0.0.10").is_dir() or not (candidate/"review/0.0.10").is_dir():raise SystemExit("candidate root must contain complete raw/review 0.0.10 trees")
  actual=(module.sha(candidate/"release/raw/0.0.10/inventory.v1.json"),module.sha(candidate/"release/raw/0.0.10/proof.v1.json"),module.tree(candidate/"release/raw/0.0.10"),module.tree(candidate/"review/0.0.10"),module.sha(candidate/"review/0.0.10/hashes.v1.json"),module.sha(candidate/"release/raw/0.0.10/wall/red-glass-v1.glb"));expected=(module.EXPECTED_INVENTORY,module.EXPECTED_PROOF,module.EXPECTED_RAW,module.EXPECTED_REVIEW,module.EXPECTED_REVIEW_HASHES,module.EXPECTED_WALL)
  if actual!=expected:raise AssertionError("builder anchors differ from audited candidate")
  tree=subprocess.check_output(["git","rev-parse",f"{module.APPROVED_COMMIT}^{{tree}}"],cwd=root,text=True).strip()
