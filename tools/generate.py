@@ -6,15 +6,15 @@ Run only through Blender:
 No network, imported content, fonts, images, or textures are used.
 """
 from __future__ import annotations
-import argparse, hashlib, json, math, struct, sys
+import argparse, hashlib, json, math, struct, sys, zlib
 from pathlib import Path
 
 import bpy
 from bpy_extras.object_utils import world_to_camera_view
 from mathutils import Vector
 
-SUPPORTED_RELEASE = "0.0.8"
-PREDECESSOR_RELEASE = "0.0.7"
+SUPPORTED_RELEASE = "0.0.9"
+PREDECESSOR_RELEASE = "0.0.8"
 VERSION = None
 BLENDER = "4.0.2"
 GENERATOR = "aerobeat-gameplay-generator-v7"
@@ -568,8 +568,21 @@ def setup_render(world=(.025,.032,.05,1)):
     bpy.ops.object.light_add(type="AREA",location=(4,6,-4)); bpy.context.object.data.energy=1500; bpy.context.object.data.shape="DISK"; bpy.context.object.data.size=5
     bpy.ops.object.light_add(type="AREA",location=(-4,2,3)); bpy.context.object.data.energy=950; bpy.context.object.data.size=4
 
+def normalize_png(path):
+    """Strip nondeterministic ancillary metadata while preserving rendered pixels."""
+    data=path.read_bytes()
+    if data[:8]!=b"\x89PNG\r\n\x1a\n": raise RuntimeError(f"invalid rendered PNG: {path}")
+    output=bytearray(data[:8]); offset=8
+    while offset<len(data):
+        length=struct.unpack_from(">I",data,offset)[0]; kind=data[offset+4:offset+8]; payload=data[offset+8:offset+8+length]
+        if kind in {b"IHDR",b"PLTE",b"IDAT",b"IEND"}:
+            output.extend(struct.pack(">I",length)); output.extend(kind); output.extend(payload); output.extend(struct.pack(">I",zlib.crc32(kind+payload)&0xffffffff))
+        offset+=length+12
+    if offset!=len(data) or not output.endswith(b"IEND\xaeB`\x82"): raise RuntimeError(f"malformed rendered PNG: {path}")
+    path.write_bytes(output)
+
 def render(path):
-    path.parent.mkdir(parents=True,exist_ok=True); bpy.context.scene.render.filepath=str(path); bpy.ops.render.render(write_still=True)
+    path.parent.mkdir(parents=True,exist_ok=True); bpy.context.scene.render.filepath=str(path); bpy.ops.render.render(write_still=True); normalize_png(path)
 
 def add_review_asset(spec,loc=(0,0,0),scale=(1,1,1),rotation=(0,0,0),instance=None):
     o=make_asset(spec); o.location=loc; o.scale=scale; o.rotation_euler=rotation
@@ -841,7 +854,7 @@ def material_manifest(role,names):
 
 def main():
     global VERSION
-    ap=argparse.ArgumentParser(); ap.add_argument("--output-root",required=True); ap.add_argument("--release",required=True,choices=[SUPPORTED_RELEASE]); a=ap.parse_args(sys.argv[sys.argv.index("--")+1:] if "--" in sys.argv else [])
+    ap=argparse.ArgumentParser(); ap.add_argument("--output-root",required=True); ap.add_argument("--release",required=True,choices=[SUPPORTED_RELEASE]); ap.add_argument("--source-commit",required=True); ap.add_argument("--source-tree",required=True); a=ap.parse_args(sys.argv[sys.argv.index("--")+1:] if "--" in sys.argv else [])
     VERSION=a.release
     root=Path(a.output_root).absolute(); rel=root/"release"/"raw"/VERSION; review_target=root/"review"/VERSION
     if rel.exists() or review_target.exists(): raise SystemExit(f"immutable successor target already exists: release={rel.exists()} review={review_target.exists()}")
@@ -882,8 +895,8 @@ def main():
         if p.is_file(): payload.append({"path":p.relative_to(rel).as_posix(),"bytes":p.stat().st_size,"sha256":sha(p)})
     inv={"schema":"aerobeat.release-inventory/v1","release":VERSION,"immutable":True,"expected_asset_count":7,"payload":payload}
     write_json(rel/"inventory.v1.json",inv)
-    proof={"schema":"aerobeat.release-proof/v1","release":VERSION,"inventory_sha256":sha(rel/"inventory.v1.json"),"generator":GENERATOR,"blender":BLENDER,"determinism":{"scope":"every file under release/raw/%s"%VERSION,"method":"primary plus two clean temporary byte comparisons","blend_snapshots_in_scope":False},"blend_snapshot_limitation":"Blender .blend container bytes are not claimed deterministic; tracked editable snapshots are subordinate to tools/generate.py.","claims":{"separate_glbs":True,"combined_glb":False,"analytic_materials_only":True,"textures":0,"external_dependencies":0,"canonical_shields":1,"guard_instances_required":2,"changed_identity":"athlete-marker/sphere-v1","byte_identical_predecessor_roles":["directional-arrow","any-note","guard","bomb","wall","track"],"directional_arrow":{"opacity":1.0,"alpha_mode":"OPAQUE","depth_test":True,"depth_write":True,"styled_faces":["+Z","-Z"],"coplanar_overlapping_caps":False,"renderer_y_flip":False,"runtime_tint_targets":["red","yellow","green"],"screen_direction_rotation_degrees":SCREEN_DIRECTIONS},"track":{"opacity":0.52,"predecessor_opacity":0.20,"opacity_multiplier":2.6,"alpha_mode":"BLEND","depth_write":False,"order":"after-grid-before-wall"},"wall":{"source_dimensions":[0.94,0.94,1.0],"unit_cell_footprint":[0.94,0.94],"cell_pitch":[1.0,1.0],"adjacent_gap":[0.06,0.06],"xy_scale_authoritative":[1,1],"z_scale_authoritative":True,"centered_pivot":True,"closed_body":True,"adjacent_instances_overlap":False},"athlete_marker":{"dimensions":[0.18,0.18,0.18],"canonical_identity":"athlete-marker/sphere-v1","canonical_instances":["nose","left-wrist","right-wrist"],"opacity":1.0,"alpha_mode":"OPAQUE","depth_test":True,"depth_write":True,"explicit_normals":True,"winding":"outward-ccw","geometric_normal_agreement":True,"source_backface_culling":True,"runtime_tint_material":"mat/tint_base","structural_materials":["mat/white","mat/charcoal"],"all_camera_directions":["+X","-X","+Y","-Y","+Z","-Z"],"coplanar_overlapping_faces":False}}}
-    proof={"schema":"aerobeat.release-proof/v1","release":VERSION,"inventory_sha256":sha(rel/"inventory.v1.json"),"generator":GENERATOR,"blender":BLENDER,"determinism":{"scope":f"every file under release/raw/{VERSION}","method":"two independent disposable temporary byte comparisons","blend_snapshots_in_scope":False},"blend_snapshot_limitation":"Blender .blend container bytes are not claimed deterministic; tracked editable snapshots are subordinate to tools/generate.py.","claims":{"separate_glbs":True,"combined_glb":False,"analytic_materials_only":True,"textures":0,"external_dependencies":0,"canonical_shields":1,"guard_instances_required":2,"changed_identities":["directional-arrow/rounded-outline-v1","any-note/outlined-circle-v1","guard/outlined-shield-v1"],"byte_identical_predecessor_roles":["bomb","wall","track","athlete-marker"],"rounded_cues":{"triangle_formula":"28N-4","expected_triangles":{"directional-arrow":1928,"any-note":1788,"guard":1172},"ceilings":{"directional-arrow":2432,"any-note":2176,"guard":1536},"styled_faces":["+Z","-Z"],"bands":["outline_charcoal","outline_white","outline_charcoal","fill"],"coplanar_overlapping_caps":False,"explicit_normals":True,"winding":"outward-ccw"},"directional_arrow":{"renderer_y_flip":False,"screen_direction_rotation_degrees":SCREEN_DIRECTIONS},"track":{"opacity":0.52,"predecessor_opacity":0.20,"opacity_multiplier":2.6,"alpha_mode":"BLEND","depth_write":False,"order":"after-grid-before-wall"},"wall":{"source_dimensions":[0.94,0.94,1.0],"unit_cell_footprint":[0.94,0.94],"cell_pitch":[1.0,1.0],"adjacent_gap":[0.06,0.06],"xy_scale_authoritative":[1,1],"z_scale_authoritative":True,"centered_pivot":True,"closed_body":True,"adjacent_instances_overlap":False},"athlete_marker":{"dimensions":[0.18,0.18,0.18],"canonical_identity":"athlete-marker/sphere-v1","canonical_instances":["nose","left-wrist","right-wrist"],"byte_identical_to_predecessor":True}}}
+    proof={"schema":"aerobeat.release-proof/v1","release":VERSION,"inventory_sha256":sha(rel/"inventory.v1.json"),"generator":GENERATOR,"blender":BLENDER,"source_authority":{"commit":a.source_commit,"tree":a.source_tree},"determinism":{"scope":"every file under release/raw/%s"%VERSION,"method":"primary plus two clean temporary byte comparisons","blend_snapshots_in_scope":False},"blend_snapshot_limitation":"Blender .blend container bytes are not claimed deterministic; tracked editable snapshots are subordinate to tools/generate.py.","claims":{"separate_glbs":True,"combined_glb":False,"analytic_materials_only":True,"textures":0,"external_dependencies":0,"canonical_shields":1,"guard_instances_required":2,"changed_identity":"athlete-marker/sphere-v1","byte_identical_predecessor_roles":["directional-arrow","any-note","guard","bomb","wall","track"],"directional_arrow":{"opacity":1.0,"alpha_mode":"OPAQUE","depth_test":True,"depth_write":True,"styled_faces":["+Z","-Z"],"coplanar_overlapping_caps":False,"renderer_y_flip":False,"runtime_tint_targets":["red","yellow","green"],"screen_direction_rotation_degrees":SCREEN_DIRECTIONS},"track":{"opacity":0.52,"predecessor_opacity":0.20,"opacity_multiplier":2.6,"alpha_mode":"BLEND","depth_write":False,"order":"after-grid-before-wall"},"wall":{"source_dimensions":[0.94,0.94,1.0],"unit_cell_footprint":[0.94,0.94],"cell_pitch":[1.0,1.0],"adjacent_gap":[0.06,0.06],"xy_scale_authoritative":[1,1],"z_scale_authoritative":True,"centered_pivot":True,"closed_body":True,"adjacent_instances_overlap":False},"athlete_marker":{"dimensions":[0.18,0.18,0.18],"canonical_identity":"athlete-marker/sphere-v1","canonical_instances":["nose","left-wrist","right-wrist"],"opacity":1.0,"alpha_mode":"OPAQUE","depth_test":True,"depth_write":True,"explicit_normals":True,"winding":"outward-ccw","geometric_normal_agreement":True,"source_backface_culling":True,"runtime_tint_material":"mat/tint_base","structural_materials":["mat/white","mat/charcoal"],"all_camera_directions":["+X","-X","+Y","-Y","+Z","-Z"],"coplanar_overlapping_faces":False}}}
+    proof={"schema":"aerobeat.release-proof/v1","release":VERSION,"inventory_sha256":sha(rel/"inventory.v1.json"),"generator":GENERATOR,"blender":BLENDER,"source_authority":{"commit":a.source_commit,"tree":a.source_tree},"determinism":{"scope":f"every file under release/raw/{VERSION}","method":"two independent disposable temporary byte comparisons","blend_snapshots_in_scope":False},"blend_snapshot_limitation":"Blender .blend container bytes are not claimed deterministic; tracked editable snapshots are subordinate to tools/generate.py.","claims":{"separate_glbs":True,"combined_glb":False,"analytic_materials_only":True,"textures":0,"external_dependencies":0,"canonical_shields":1,"guard_instances_required":2,"changed_identities":["directional-arrow/rounded-outline-v1","any-note/outlined-circle-v1","guard/outlined-shield-v1"],"byte_identical_predecessor_roles":["bomb","wall","track","athlete-marker"],"rounded_cues":{"triangle_formula":"28N-4","expected_triangles":{"directional-arrow":1928,"any-note":1788,"guard":1172},"ceilings":{"directional-arrow":2432,"any-note":2176,"guard":1536},"styled_faces":["+Z","-Z"],"bands":["outline_charcoal","outline_white","outline_charcoal","fill"],"coplanar_overlapping_caps":False,"explicit_normals":True,"winding":"outward-ccw"},"directional_arrow":{"renderer_y_flip":False,"screen_direction_rotation_degrees":SCREEN_DIRECTIONS},"track":{"opacity":0.52,"predecessor_opacity":0.20,"opacity_multiplier":2.6,"alpha_mode":"BLEND","depth_write":False,"order":"after-grid-before-wall"},"wall":{"source_dimensions":[0.94,0.94,1.0],"unit_cell_footprint":[0.94,0.94],"cell_pitch":[1.0,1.0],"adjacent_gap":[0.06,0.06],"xy_scale_authoritative":[1,1],"z_scale_authoritative":True,"centered_pivot":True,"closed_body":True,"adjacent_instances_overlap":False},"athlete_marker":{"dimensions":[0.18,0.18,0.18],"canonical_identity":"athlete-marker/sphere-v1","canonical_instances":["nose","left-wrist","right-wrist"],"byte_identical_to_predecessor":True}}}
     write_json(rel/"proof.v1.json",proof)
     review(root)
     expected_release={"inventory.v1.json","proof.v1.json","sets/default-v1.json"}
