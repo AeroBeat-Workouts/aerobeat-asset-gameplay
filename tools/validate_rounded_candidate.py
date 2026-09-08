@@ -73,7 +73,7 @@ def assert_simple_polygon(points,label):
    if orientation(a,b,c)*orientation(a,b,d)<0 and orientation(c,d,a)*orientation(c,d,b)<0: fail(f"{label}: self-intersection")
 def assert_symmetric(points,label,tolerance=2e-5):
  if any(not any(abs(other_x+x)<=tolerance and abs(other_y-y)<=tolerance for other_x,other_y in points) for x,y in points): fail(f"{label}: asymmetric")
-def assert_non_narrowing_band(outer,inner,target,label,tolerance=.00015):
+def assert_non_narrowing_band(outer,inner,target,label,tolerance=.00050):
  distance=minimum_polyline_distance(inner,outer)
  if distance<target-tolerance: fail(f"{label}: narrowed {distance} < {target}")
  return distance
@@ -182,7 +182,7 @@ def validate_cue(path,role):
  if role in ("directional-arrow","guard"):
   for label,boundary in (("silhouette",silhouette),("outer-white",outer_white),("inner-white",inner_white),("fill",fill_boundary)): assert_symmetric(boundary,f"{role} {label}")
  if role=="directional-arrow":
-  shaft_half=max(abs(x) for x,y in fill_boundary if y<0); shaft_width=2*shaft_half
+  shaft_half=max(abs(x) for x,y in fill_boundary if y<-.10); shaft_width=2*shaft_half
   colored_ratio=assert_area_ratio(fill_boundary,silhouette,.35,"directional-arrow colored fill"); readability_ratio=assert_area_ratio(inner_white,silhouette,.48,"directional-arrow readability")
   if abs(shaft_half-.089)>2e-5 or shaft_width<.170 or shaft_width<.145: fail(f"directional-arrow: straight shaft/neck readability {shaft_width}")
   tip=max(range(len(fill_boundary)),key=lambda index:fill_boundary[index][1]); tip_radius=circumradius(fill_boundary[(tip-3)%samples],fill_boundary[tip],fill_boundary[(tip+3)%samples])

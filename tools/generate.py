@@ -211,29 +211,48 @@ def sample_filleted_polygon(anchors,radii,segments):
     return loop
 
 def filleted_loops(anchors,radii,segments,offsets,minimum_radii):
-    """Independent inset-anchor boundaries with collapse-safe re-rounded joins."""
+    """Independent inset-anchor boundaries retained for the canonical guard."""
     loops=[]
     for offset in offsets:
         inset=inset_anchor_polygon(anchors,offset)
-        # Naive r-offset values become negative at the inner boundaries. Clamp each
-        # independently authored join to its semantic floor; only the arrow fill tip
-        # requires .045, while shoulders/necks may tighten to retain valid tangent runs.
         effective=[max(floor,radius-offset) for radius,floor in zip(radii,minimum_radii)]
         try: loops.append(sample_filleted_polygon(inset,effective,segments))
         except ValueError as error: raise ValueError(f"morphological offset {offset}: {error}") from error
     return loops
 
+def signed_outset_filleted_loops(anchors,radii,segments,outsets):
+    """Exact signed offsets of one rounded contour; positive values expand fill."""
+    turns=[]
+    for i,p in enumerate(anchors):
+        previous=anchors[i-1]; following=anchors[(i+1)%len(anchors)]
+        incoming=(Vector(p)-Vector(previous)).normalized()
+        outgoing=(Vector(following)-Vector(p)).normalized()
+        turns.append(math.atan2(incoming.x*outgoing.y-incoming.y*outgoing.x,incoming.dot(outgoing)))
+    loops=[]
+    for outset in outsets:
+        shifted=inset_anchor_polygon(anchors,-outset)
+        # An outward signed offset increases convex radii and decreases concave
+        # radii. The fill neck radius keeps every requested level strictly positive,
+        # so no medial-axis clamp or independently invented join is required.
+        effective=[radius+outset if turn>0 else radius-outset for radius,turn in zip(radii,turns)]
+        if min(effective)<=0: raise ValueError(f"signed outset {outset}: non-positive radius {min(effective)}")
+        try: loops.append(sample_filleted_polygon(shifted,effective,segments))
+        except ValueError as error: raise ValueError(f"signed outset {outset}: {error}") from error
+    return loops
+
 def solve_arrow_loops(offsets):
-    radii=[.050,.050,.045,.060,.055,.060,.045]
-    minimum_radii=[.020,.020,.020,.020,.045,.020,.020]
+    # Author the fill first, then expand one analytic rounded family. Outsets
+    # .020/.072/.086 are respectively inner-charcoal, outer-white, and silhouette;
+    # their differences retain the exact .020/.052/.014 hierarchy everywhere.
+    fill_radii=[.045,.045,.095,.020,.045,.020,.095]
     segments=[8,8,6,13,8,13,6]
-    head_x=.390; tip_y=.390
+    head_x=.304; tip_y=.304
     for _ in range(40):
-        anchors=[(-.175,-.390),(.175,-.390),(.175,.055),(head_x,.055),(0,tip_y),(-head_x,.055),(-.175,.055)]
-        outer=filleted_loops(anchors,radii,segments,[0],minimum_radii)[0]
+        anchors=[(-.089,-.304),(.089,-.304),(.089,.020),(head_x,.020),(0,tip_y),(-head_x,.020),(-.089,.020)]
+        outer=signed_outset_filleted_loops(anchors,fill_radii,segments,[.086])[0]
         head_x+=.390-max(x for x,_ in outer)
         tip_y+=.390-max(y for _,y in outer)
-    loops=filleted_loops(anchors,radii,segments,offsets,minimum_radii)
+    loops=signed_outset_filleted_loops(anchors,fill_radii,segments,[.086-offset for offset in offsets])
     if len(loops[0])!=69: raise ValueError("arrow perimeter sample contract")
     return loops
 
@@ -793,7 +812,7 @@ def material_manifest(role,names):
             "fill_material":fill_material,"runtime_tint_material":None if role=="guard" else "mat/tint_base",
             "runtime_tintable":role!="guard"}
         if role=="directional-arrow":
-            result["contract"].update({"fillet_radii":{"tip":.055,"outer_head_shoulders":.060,"concave_necks":.045,"tail_corners":.050},"boundary_construction":"independent-inset-anchor-morphological-erosion","cumulative_cap_offsets":[.014,.066,.086],"join_policy":"collapsed joins re-rounded independently; bands may widen but never narrow","outer_shaft_half_width":.175,"nominal_fill_shaft_width":.178,"minimum_fill_shaft_width":.170,"minimum_fill_neck_width":.145,"minimum_fill_tip_radius":.045,"minimum_colored_fill_area_ratio":.35,"minimum_interior_readability_area_ratio":.48,"perimeter_samples":69,"expected_triangles":1928,"renderer_y_flip":False,"screen_direction_rotation_degrees":SCREEN_DIRECTIONS})
+            result["contract"].update({"fillet_radii":{"fill_tip":.045,"fill_head_shoulders":.020,"fill_concave_necks":.095,"fill_tail_corners":.045},"boundary_construction":"fill-first-analytic-rounded-signed-offsets","signed_outset_levels":[0,.020,.072,.086],"cumulative_cap_offsets":[.014,.066,.086],"join_policy":"one analytic rounded family; no radius clamps or independently re-rounded joins","outer_shaft_half_width":.175,"nominal_fill_shaft_width":.178,"minimum_fill_shaft_width":.170,"minimum_fill_neck_width":.145,"minimum_fill_tip_radius":.045,"minimum_colored_fill_area_ratio":.35,"minimum_interior_readability_area_ratio":.48,"perimeter_samples":69,"expected_triangles":1928,"renderer_y_flip":False,"screen_direction_rotation_degrees":SCREEN_DIRECTIONS})
         elif role=="any-note":
             result["contract"].update({"analytic_radii":[.350,.336,.284,.264],"perimeter_samples":64,"circularity_minimum":.998,"expected_triangles":1788})
         else:
