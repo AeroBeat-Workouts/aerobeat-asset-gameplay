@@ -208,3 +208,85 @@ Topology and runtime evidence remain exact: arrow `69` samples / `1,928` triangl
 Canonical `0.0.8` remains exact: raw tree `e26ec4e8278860c60568bd2a89983cd09555ee75`, 17 files / `429,026` bytes, inventory `ac30d6b70cbae96115a7c97f5ad02b3da21fde7fb77f69083f1090e268bab5ac`, proof `ba8a52cf747ec5ab58dcd024c90f813a5c477541892f71da698ead6a65ca4758`; review tree `df080ea57c99bb50697f14e891edad7f53dbda2a`, 73 files / `77,758,435` bytes. Exact raw trees `0.0.1`–`0.0.8` are respectively `8e8879a750aa70715fd1ae45e62a447c8e9cd8b6`, `c2dedfd9c18a2260f53b7c013ec77a8dcb10c877`, `aa37bf534cc592a4057127876d567eadc3496f49`, `be36bbd03647bfb4654e0be1ed8b3f6446ced4ec`, `000653eace4b93f3c5d2eef11bd5c8255008b3de`, `53181edfdb560de2aeae01e9a05c212a9b93e438`, `846c41297230b5077ab1119880b729cc120e1098`, and `e26ec4e8278860c60568bd2a89983cd09555ee75`; exact review trees are `f0cd9a0a9fdbc7519db5a5f8515d61d479dc22c9`, `b4c68d81faba791ebe7361f9d5a8c1bf339b5e96`, `9122d32d6272854f6fc0f3a29b74997cee799bcf`, `8342d83194d8375886f371d6d57c6fcdda677a6f`, `a1781ce69ba81d660e4ffb24ae8b47d3873c63bb`, `f5652c80852153e746774579e4c1fb495ea360f3`, `8ca78c143d78743ff1dfce1b9fcadc5755a02530`, and `df080ea57c99bb50697f14e891edad7f53dbda2a`. No permanent raw/review `0.0.9` exists.
 
 **Authorization:** this PASS authorizes exactly one later canonical gameplay-asset `release/raw/0.0.9` plus `review/0.0.9` build from the exact pushed documentation-only asset audit tip that contains this section. The builder must record and use that exact commit/tree as its sole final audit authority, retain `ff34f05…` / `339dd803…` as the scoped generation-input authority, require both `0.0.9` targets to be absent, run the canonical driver exactly once, and preserve all immutable predecessors and raw web evidence. This authorization does not authorize any web release, web version change, serving change, tag, GitHub Release, npm publication, or physical PASS.
+
+## Failed canonical invocation diagnosis (dv1q / qj4w)
+
+### Exact Observed Failure
+
+The sole authorized command was `python3 tools/build_rounded_release.py --root . --release 0.0.9`. It exited `2` in `argparse` before `main()` could perform authority inspection, staging preparation, Blender startup, validation, or promotion. The exact parser contract was `parser.add_argument("--release", required=True, choices=[RELEASE])`, while imported `validate_rounded_candidate.RELEASE` was exactly `"0.0.8"`. Consequently argparse rejected `0.0.9` as an invalid choice (the accepted choices contained only `0.0.8`). Direct post-attempt checks found no `release/raw/0.0.9`, `review/0.0.9`, or `.canonical-0.0.9-staging` path. These are observed facts from the `dv1q` failure comment and the source at failed authority commit `7f6638e3dbd2ec16b686b14a1e9ba99cd636a2f0`; no rerun is permitted.
+
+### Expected Behavior
+
+Preparation tooling must accept exactly successor `0.0.9`, reject every other release before Blender or promotion, stage immutable predecessor raw `0.0.8`, and permit disposable candidate generation/validation only after clean generation inputs and absent authority/candidate targets are proven. This task prepares that authority but does not authorize or perform another canonical build.
+
+### Execution Path
+
+1. Python imported `RELEASE="0.0.8"` from `validate_rounded_candidate.py` into `build_rounded_release.py`.
+2. `main()` constructed the `--release` parser with `choices=[RELEASE]`.
+3. `parse_args()` compared requested `0.0.9` with the sole allowed value `0.0.8`.
+4. Argparse emitted its usage/invalid-choice diagnostic and raised `SystemExit(2)`.
+5. Execution never reached `generation_inputs_are_authorized()`, target/staging checks, `prepare()`, Blender, marker creation, validation, smoke, or promotion.
+
+### Most Likely Root Cause
+
+The release-preparation proof layer was never advanced after the source audit authorized `0.0.9`: `generate.py`, the candidate validator, canonical builder marker, reproducibility/oracle paths, and staged predecessor assumptions remained versioned for `0.0.8`. The first hard gate encountered was the builder's imported argparse choice, so the failure was deterministic and pre-generational rather than a Blender, geometry, source-authority, or filesystem defect.
+
+### Alternative Hypotheses
+
+1. Dirty generation inputs: contradicted because argparse exited before the Git-diff authority gate and the attempt recorded clean exact authority commit/tree.
+2. Existing canonical or staging targets: contradicted both by execution order and post-attempt absence checks.
+3. Blender failure: impossible on this path because Blender lookup/invocation occurs after parsing and was never reached.
+4. Candidate anchor mismatch: impossible on this path because no candidate was generated and anchor comparison occurs after generation.
+
+### Why Previous Fixes Failed
+
+The preceding arrow repair and proof-hardening work intentionally remained disposable `0.0.8` tooling while canonical `0.0.9` authorization was reserved. The final audit authorized a successor but did not advance the executable release literals. The canonical invocation therefore correctly failed closed, but at an earlier gate than the authorization expected.
+
+### Unknowns
+
+The versioned `0.0.9` inventory, proof, raw/review tree digests, total bytes, and review hashes cannot be inferred from `0.0.8`; they must be derived from two independently generated isolated candidates after a clean `0.0.9` generation-input authority commit.
+
+### Minimal Reproduction
+
+At failed authority `7f6638e3…`, inspect the imported `RELEASE` and builder parser: `RELEASE` is `0.0.8`, and `choices=[RELEASE]`. Parsing argument vector `--release 0.0.9` necessarily exits `2`. Re-running the canonical driver is neither required nor permitted.
+
+### Proposed Verification
+
+First advance and commit only generation inputs for `0.0.9`. Then pin tooling to that commit/tree, require clean scoped inputs and absent raw/review/staging before Blender, and generate two isolated candidates. They must match byte-for-byte across all 17 raw and all 73 review files, match the staged arrow semantic fingerprint and exact geometry contract, carry correct `0.0.9` proof source identity, and yield the exact anchors later embedded into validation. Hostile wrong-version, dirty-input, and pre-existing-target/staging tests must reject before Blender or promotion.
+
+### Recommended Fix
+
+Advance `generate.py` to accept only `0.0.9` and use predecessor `0.0.8`; advance the staged manifests/set to `0.0.9`; commit this clean generation-input authority before changing validator/builder pins. In a second tooling/evidence commit, update exact release literals, generation marker, authority commit/tree, candidate paths, expected anchors, proof identity checks, reproducibility, and adversaries. Never invoke the canonical driver and never create permanent raw/review `0.0.9`.
+
+### Debugging Record
+
+```text
+Problem: Authorized 0.0.9 canonical command failed before generation.
+Observed symptom: build_rounded_release argparse exited 2 because requested 0.0.9 was outside sole choice 0.0.8; no target or staging path appeared.
+Root cause: Release-preparation tooling remained explicitly pinned to 0.0.8 after audit authorization moved to successor 0.0.9.
+Evidence: dv1q failure comment; build_rounded_release.py choices=[RELEASE]; validate_rounded_candidate.py RELEASE="0.0.8"; clean/absent postconditions.
+Failed approaches: No implementation fix was attempted; the single invocation correctly failed closed and was consumed.
+Corrective action: Commit 0.0.9 generation inputs first, then pin tooling/anchors from two isolated candidates.
+Verification test: Pre-Blender hostile gates, two-build exact 17 raw/73 review comparison, fingerprint/geometry/proof identity, full isolated validation and immutable predecessor checks.
+Related files/components: tools/generate.py, tools/build_rounded_release.py, tools/validate_rounded_candidate.py, reproducibility/oracle/adversarial tools, staged manifests/set.
+Remaining uncertainty: Exact 0.0.9 candidate anchors until isolated generation completes.
+```
+
+## 0.0.9 release-preparation result (qj4w)
+
+Preparation is **CODER PASS; QA remains open**. Generation inputs were committed first at exact commit `f2ad27f9c5dd067beca0ab8504565d781e49a9f6` / tree `fe3938e85227d6ea045e8da7330e48cb749c6360`. That authority advances the generator and staged source manifests/set from sole successor `0.0.8` to sole successor `0.0.9`, changes the predecessor staging source from raw `0.0.7` to immutable raw `0.0.8`, requires explicit source commit/tree proof identity, and normalizes rendered PNGs by removing nondeterministic ancillary metadata while preserving exact critical chunks/pixels. The latter closes an observed first two-build mismatch: IDAT chunks and file sizes were already identical, while Blender-authored `tEXt` path/time values differed; normalized reruns are exact for all review bytes.
+
+Two fresh independently generated isolated candidates then matched byte-for-byte across all `17` raw and all `73` review files. Exact prepared anchors are:
+
+- generation authority commit/tree: `f2ad27f9c5dd067beca0ab8504565d781e49a9f6` / `fe3938e85227d6ea045e8da7330e48cb749c6360`;
+- source semantic fingerprint: `6ec9138f82933e7b94e4732f0b1ea038e85c5e80565ab404ce443c36a249ac11`, with exact document equality across staged and both isolated arrow scenes;
+- raw: `17` files / `429,209` bytes / tree digest `979a202bf06d99ebc53588668d67e9d50df7bcd14e9b0d4e69c6dd73b09f9a00`;
+- inventory/proof SHA-256: `95ec22c1657d4931e42327e0544b86f782075288a3330a4d23b0fed07dce65fa` / `e1726ca2bc3a0980cc86ba6184bf7da57079f7ee1e42e24094c47196a3dbace9`;
+- proof `source_authority`: exact commit/tree above;
+- review: `73` files / `77,797,749` bytes / tree digest `009d21bd09b9015a3f7f9629b96122e3f462875c9a5a3ef87aab578c872b9abc`;
+- review hashes-manifest SHA-256: `8a7155bbd9a7878eaac37cb1a51eddc21bfb8ab861bf16e65b6d6b0b6b43d282`;
+- arrow GLB: `75435bc79c0278da5488ab05d1a97ac409cdab390e10483748c30a5aa67ad7e4` / `152,916` bytes.
+
+Fresh candidate validation passed in canonical mode with Blender `4.0.2` source/GLB smoke against a disposable root: raw `17` / `429,209`, review `73` / `77,797,749`, arrow/circle/guard `1,928 / 1,788 / 1,172` triangles, Euler `2`, positive volumes, and minimum explicit-normal dots at least `0.9999999999962325`. The default uniform-arrow oracle passed `5,184` raster checks, all six non-arrow GLBs were byte-identical to immutable `0.0.8`, and exact band/readability/topology values remained unchanged. The `14` rounded mutations, three shoulder bulges, superseded contract, wrong release `0.0.8/0.0.10`, dirty generation inputs, existing raw/review/staging, altered proof/source anchor, subprocess fatal-signature, visible-window budget, immutable predecessor validation, and exact 16 Git-tree checks all reject/pass as intended before Blender or promotion where applicable. The maintained reproducibility command independently generated and removed another two temporary builds and repeated exact `17 + 73` byte equality and fingerprint identity.
+
+The builder now imports exact `RELEASE=0.0.9`, exact generation marker, prepared authority commit/tree, and versioned raw/review expected anchors. It stages predecessor raw `0.0.8`; parser, clean-authority, existing-target/staging, post-generation anchor, full candidate validation, smoke, and promotion ordering remain fail closed. The canonical driver was never invoked during preparation. Permanent `release/raw/0.0.9`, `review/0.0.9`, and `.canonical-0.0.9-staging` remain absent, and all disposable candidates/fingerprints are removed after evidence collection.

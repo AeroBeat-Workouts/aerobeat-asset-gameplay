@@ -5,6 +5,7 @@ import argparse, hashlib, json, shutil, sys, tempfile
 from pathlib import Path
 from subprocess_contract import run_checked
 from test_uniform_arrow import scene_fingerprint
+from validate_rounded_candidate import APPROVED_COMMIT, APPROVED_TREE, RELEASE
 
 def sha(path): return hashlib.sha256(path.read_bytes()).hexdigest()
 def inventory(root,relative):
@@ -17,7 +18,7 @@ def immutable(root):
     return result
 def prepare(authority,destination):
     (destination/"release/raw").mkdir(parents=True); (destination/"review").mkdir()
-    shutil.copytree(authority/"release/raw/0.0.7",destination/"release/raw/0.0.7")
+    shutil.copytree(authority/"release/raw/0.0.8",destination/"release/raw/0.0.8")
     for name in ("source","manifests","sets"): shutil.copytree(authority/name,destination/name)
     shutil.copyfile(authority/"LICENSE.md",destination/"LICENSE.md")
 def main():
@@ -28,11 +29,10 @@ def main():
         builds=[Path(left_dir),Path(right_dir)]
         for build in builds:
             prepare(root,build)
-            run_checked([blender,"--background","--factory-startup","--python",str(root/"tools/generate.py"),"--","--output-root",str(build),"--release","0.0.8"],operation=f"uniform arrow generation {build.name}",marker="GENERATE_OK release=0.0.8 assets=7 sources=10 manifests=10 release_files=17 review_pngs=68 review_metadata=5")
+            run_checked([blender,"--background","--factory-startup","--python",str(root/"tools/generate.py"),"--","--output-root",str(build),"--release",RELEASE,"--source-commit",APPROVED_COMMIT,"--source-tree",APPROVED_TREE],operation=f"uniform arrow generation {build.name}",marker=f"GENERATE_OK release={RELEASE} assets=7 sources=10 manifests=10 release_files=17 review_pngs=68 review_metadata=5")
             run_checked([sys.executable,str(root/"tools/test_uniform_arrow.py"),"--authority-root",str(root),"--candidate-root",str(build)],operation=f"uniform arrow validation {build.name}",marker="UNIFORM_ARROW_OK geometry_bands=3 features=4 raster_checks=5184 adversaries=3 rotations=8 colors=3 scales=3 dprs=3 unchanged_glbs=6")
-        # Runtime bytes are deterministic; Blender review PNG container bytes are
-        # evidence only and retain the repository's existing non-reproducibility scope.
-        compared=(Path("release/raw/0.0.8"),)
+        # Runtime and normalized review evidence are both byte-deterministic.
+        compared=(Path("release/raw")/RELEASE,Path("review")/RELEASE)
         for relative in compared:
             if inventory(builds[0],relative)!=inventory(builds[1],relative): raise AssertionError(f"nondeterministic candidate bytes: {relative}")
         source_relative=Path("source/directional-arrow/rounded-outline-v1/rounded-outline-v1.blend")
@@ -45,5 +45,5 @@ def main():
         if documents[0]!=documents[1] or documents[1]!=documents[2]: raise AssertionError("staged arrow manifest semantic drift")
     after=immutable(root)
     if before!=after: raise AssertionError("immutable raw/review 0.0.1-0.0.8 drift")
-    print(f"UNIFORM_ARROW_REPRODUCIBILITY_OK builds=2 raw_files=17 review_evidence_files_each=73 immutable_trees=16 semantic_scene_fingerprint={fingerprints[0]}")
+    print(f"UNIFORM_ARROW_REPRODUCIBILITY_OK release={RELEASE} builds=2 raw_files=17 review_files=73 immutable_trees=16 semantic_scene_fingerprint={fingerprints[0]}")
 if __name__=="__main__": main()

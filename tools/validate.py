@@ -375,7 +375,7 @@ def validate(root,release,smoke=True,check_git=True,check_immutable_review=True)
  if actual!=expected_paths: fail(f"release inventory mismatch missing={sorted(expected_paths-actual)} extra={sorted(actual-expected_paths)}")
  setdoc=load(rel/"sets/default-v1.json")
  staged_set=load(root/"sets/default-v1.json")
- if staged_set.get("release")!="0.0.8" or staged_set.get("roles")!={"directional-arrow":"rounded-outline-v1","any-note":"outlined-circle-v1","guard":"outlined-shield-v1","bomb":"urchin-v1","wall":"red-glass-v1","track":"blue-glass-v1","athlete-marker":"sphere-v1"}: fail("mutable staged successor set")
+ if staged_set.get("release")!="0.0.9" or staged_set.get("roles")!={"directional-arrow":"rounded-outline-v1","any-note":"outlined-circle-v1","guard":"outlined-shield-v1","bomb":"urchin-v1","wall":"red-glass-v1","track":"blue-glass-v1","athlete-marker":"sphere-v1"}: fail("mutable staged successor set")
  if setdoc.get("roles")!={r:v[0] for r,v in EXPECTED.items()}: fail("set mapping is not independently exact")
  if setdoc.get("constraints")!={"guard_instances_per_beat":2,"guard_canonical_asset":"guard/shield-v1"}: fail("canonical shield constraint")
  inv=load(rel/"inventory.v1.json"); listed={x["path"]:x for x in inv["payload"]}; payload=expected_paths-{"inventory.v1.json","proof.v1.json"}
@@ -456,7 +456,7 @@ def validate(root,release,smoke=True,check_git=True,check_immutable_review=True)
    entry=layout["images"].get(image,{})
    if entry.get("kind")!="athlete-marker-face-contrast" or entry.get("camera_face")!=face or entry.get("background")!=background.upper() or entry.get("backface_culling") is not True or entry.get("embedded_normals") is not True or entry.get("exterior_visible") is not True or len(entry.get("objects",[]))!=1: fail(f"athlete-marker: missing truthful culling {face}/{background} layout evidence")
  # Tool/source policy: no third-party imports, network calls, asset loading, textures, fonts, or engine metadata.
- allowed={"argparse","ast","collections","hashlib","json","math","os","pathlib","shutil","struct","subprocess","subprocess_contract","test_uniform_arrow","validate","validate_rounded_candidate","sys","tempfile","bpy","bpy_extras","mathutils","__future__"}
+ allowed={"argparse","ast","collections","contextlib","hashlib","io","json","math","os","pathlib","shutil","struct","subprocess","subprocess_contract","build_rounded_release","reproducibility_uniform_arrow","test_uniform_arrow","validate","validate_rounded_candidate","sys","tempfile","zlib","bpy","bpy_extras","mathutils","__future__"}
  for p in sorted((root/"tools").glob("*.py")):
   tree=ast.parse(p.read_text(encoding="utf-8"),filename=str(p))
   imports=set()

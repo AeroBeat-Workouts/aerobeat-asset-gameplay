@@ -211,7 +211,7 @@ def main():
         comparable=lambda document:{**document,"files":{key:value for key,value in document["files"].items() if key not in ("source_sha256","source_bytes")}}
         if comparable(staged_document)!=comparable(generated_document): raise AssertionError("staged/generated arrow manifest semantic drift")
     manifest=json.loads(candidate_manifest.read_text(encoding="utf-8")); files=manifest["files"]
-    candidate_glb=candidate/"release/raw/0.0.8/directional-arrow/rounded-outline-v1.glb"
+    candidate_glb=candidate/"release/raw/0.0.9/directional-arrow/rounded-outline-v1.glb"
     if (files["source_sha256"],files["source_bytes"],files["release_sha256"],files["release_bytes"])!=(sha(candidate_source),candidate_source.stat().st_size,sha(candidate_glb),candidate_glb.stat().st_size): raise AssertionError("arrow manifest provenance")
     contract=manifest["materials"]["contract"]; assert_directional_arrow_contract(contract)
     old_contract=dict(contract,boundary_construction="independent-inset-anchor-morphological-erosion",join_policy="collapsed joins re-rounded independently; bands may widen but never narrow")
@@ -220,7 +220,7 @@ def main():
     else: raise AssertionError("superseded arrow morphology contract accepted")
     unchanged=(("any-note","outlined-circle-v1"),("guard","outlined-shield-v1"),("bomb","urchin-v1"),("wall","red-glass-v1"),("track","blue-glass-v1"),("athlete-marker","sphere-v1"))
     for role,variant in unchanged:
-        left=authority/"release/raw/0.0.8"/role/f"{variant}.glb"; right=candidate/"release/raw/0.0.8"/role/f"{variant}.glb"
+        left=authority/"release/raw/0.0.8"/role/f"{variant}.glb"; right=candidate/"release/raw/0.0.9"/role/f"{variant}.glb"
         if left.read_bytes()!=right.read_bytes(): raise AssertionError(f"unchanged candidate GLB drift: {role}")
     topology=validate_cue(candidate_glb,"directional-arrow")
     before=measurements(boundaries(authority/"release/raw/0.0.8/directional-arrow/rounded-outline-v1.glb"))
@@ -231,7 +231,7 @@ def main():
     except AssertionError: raster_red=True
     else: raise AssertionError("red-before immutable 0.0.8 unexpectedly passed raster")
     red=geometry_red and raster_red
-    after_loops=boundaries(candidate/"release/raw/0.0.8/directional-arrow/rounded-outline-v1.glb"); after=measurements(after_loops); assert_uniform(after)
+    after_loops=boundaries(candidate/"release/raw/0.0.9/directional-arrow/rounded-outline-v1.glb"); after=measurements(after_loops); assert_uniform(after)
     fill_ratio=polygon_area(after_loops["fill"])/polygon_area(after_loops["silhouette"]); interior_ratio=polygon_area(after_loops["inner-white"])/polygon_area(after_loops["silhouette"])
     if fill_ratio<.35 or interior_ratio<.48: raise AssertionError(f"readability {fill_ratio} {interior_ratio}")
     checks,raster=raster_matrix(after_loops); mutations=adversaries(after_loops)

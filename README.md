@@ -29,18 +29,20 @@ Requires Blender `4.0.2` and Python 3.
 python3 tools/validate.py --root . --release 0.0.7
 python3 tools/test_subprocess_contract.py --root .
 
-# Finalized Aero Rounded successor validation (never regenerates).
-python3 tools/validate_rounded_candidate.py --authority-root . --candidate-root . --canonical --smoke
-python3 tools/test_rounded_adversarial.py --candidate-root .
+# Prepared 0.0.9 candidate validation; CANDIDATE is an isolated disposable root.
+python3 tools/validate_rounded_candidate.py --authority-root . --candidate-root "$CANDIDATE" --canonical --smoke
+python3 tools/test_uniform_arrow.py --authority-root . --candidate-root "$CANDIDATE"
+python3 tools/test_rounded_adversarial.py --candidate-root "$CANDIDATE"
+python3 tools/test_rounded_release_preflight.py --root . --candidate-root "$CANDIDATE"
 python3 tools/test_visible_window_budget.py
 
-# Disposable reproducibility remains available only while canonical 0.0.8 is absent.
+# Generates two isolated 0.0.9 candidates, compares all 17 raw and 73 review files,
+# verifies the semantic arrow fingerprint, preserves predecessors, and removes temps.
 python3 tools/reproducibility_rounded.py --root .
 
-# The one-shot canonical driver is release-coder tooling, not a routine rebuild command.
-# It refuses existing canonical/staging paths, preserves the approved source authority,
-# runs Blender through tools/subprocess_contract.py, and promotes only raw/review output.
-python3 tools/build_rounded_release.py --root . --release 0.0.8
+# The one-shot canonical driver is armed release tooling, not a rebuild command.
+# The prior authorization was consumed by the recorded argparse failure; do not invoke it
+# without a new explicit audited authorization. Preparation and QA create no canonical target.
 ```
 
 ## Aero Rounded successor
@@ -53,11 +55,13 @@ The exact closed-shell count is `T(N)=28N−4`: arrow `N=69`, `1,928 ≤ 2,432`;
 
 ### Staged uniform-arrow repair proof
 
-The mutable directional-arrow source is repaired at approved generation-input authority commit `ff34f05f376e57d425430afc2520c0512a53ab73` / tree `339dd8031184d11bf20272a40353c022df71d8b4`; the authority scope is exact `tools/generate.py`, `source/`, `manifests/`, `sets/`, and `LICENSE.md`. The arrow contract is exclusively `fill-first-analytic-rounded-signed-offsets` with levels `0 / 0.020 / 0.072 / 0.086` and no radius clamps or independently re-rounded joins. The superseded arrow morphology contract is rejected; guard retains its separate approved morphology contract.
+The mutable directional-arrow source repair originated at `ff34f05f376e57d425430afc2520c0512a53ab73` / tree `339dd8031184d11bf20272a40353c022df71d8b4`. Prepared successor `0.0.9` generation inputs are pinned independently at commit `f2ad27f9c5dd067beca0ab8504565d781e49a9f6` / tree `fe3938e85227d6ea045e8da7330e48cb749c6360`; the authority scope is exact `tools/generate.py`, `source/`, `manifests/`, `sets/`, and `LICENSE.md`. The generator accepts only `0.0.9`, stages predecessor raw `0.0.8`, requires its exact source commit/tree identity in proof, and strips nondeterministic ancillary PNG metadata so all 73 review files reproduce byte-for-byte. The arrow contract remains exclusively `fill-first-analytic-rounded-signed-offsets` with levels `0 / 0.020 / 0.072 / 0.086` and no radius clamps or independently re-rounded joins. The superseded arrow morphology contract is rejected; guard retains its separate approved morphology contract.
 
-Blender `4.0.2` may embed nondeterministic save/container metadata, so raw `.blend` byte equality is neither claimed nor used to compare the staged and isolated arrow source. `tools/blender_scene_fingerprint.py` instead serializes scene, collection, object transform/visibility/parenting, mesh vertex/edge/loop/polygon/triangle/material-slot and custom-normal presence, material/node graph, world, action, and custom-property semantics into canonical JSON. Blender-recalculated load-time vertex/loop normal values alone are excluded because repeated opens demonstrate scheduling-dependent low-bit drift; authored coordinates and custom-normal presence stay exact, while generated GLB normal bytes stay exact. Tests require an exact SHA-256/document match for staged versus each isolated source. Generated runtime evidence remains stricter: every file in both isolated `release/raw/0.0.8` inventories, including the arrow GLB and inventory/proof manifests, must match byte-for-byte.
+Blender `4.0.2` may embed nondeterministic save/container metadata, so raw `.blend` byte equality is neither claimed nor used to compare the staged and isolated arrow source. `tools/blender_scene_fingerprint.py` instead serializes scene, collection, object transform/visibility/parenting, mesh vertex/edge/loop/polygon/triangle/material-slot and custom-normal presence, material/node graph, world, action, and custom-property semantics into canonical JSON. Blender-recalculated load-time vertex/loop normal values alone are excluded because repeated opens demonstrate scheduling-dependent low-bit drift; authored coordinates and custom-normal presence stay exact, while generated GLB normal bytes stay exact. Tests require an exact SHA-256/document match for staged versus each isolated source. Generated evidence is stricter: every file in both isolated `release/raw/0.0.9` and `review/0.0.9` inventories must match byte-for-byte, including the arrow GLB, inventory/proof manifests, normalized PNGs, and review hashes.
 
 `tools/test_uniform_arrow.py` uses both minimum- and maximum-width probes for every straight/concave/convex/tip feature instead of selecting a best nominal probe. Every probe runs across eight rotations, three contrast-checked fill colors, three scales, and DPR `1/2/3`. Deterministic coverage sampling is capped at `0.00025` world units and every measured band uses the fixed `0.002` tolerance, seven times narrower than the narrowest `0.014` band. Immutable `0.0.8` and all three targeted shoulder-bulge raster fixtures must fail. This is staged repair evidence only: raw/review `0.0.1`–`0.0.8` remain immutable, and no canonical build or permanent `0.0.9` is authorized.
+
+Prepared `0.0.9` authority is disposable evidence only. Two independent isolated generations match all 17 raw files and all 73 review files byte-for-byte. Raw is 429,209 bytes with tree digest `979a202bf06d99ebc53588668d67e9d50df7bcd14e9b0d4e69c6dd73b09f9a00`, inventory SHA-256 `95ec22c1657d4931e42327e0544b86f782075288a3330a4d23b0fed07dce65fa`, and proof SHA-256 `e1726ca2bc3a0980cc86ba6184bf7da57079f7ee1e42e24094c47196a3dbace9`. Review is 77,797,749 bytes with tree digest `009d21bd09b9015a3f7f9629b96122e3f462875c9a5a3ef87aab578c872b9abc` and hashes-manifest SHA-256 `8a7155bbd9a7878eaac37cb1a51eddc21bfb8ab861bf16e65b6d6b0b6b43d282`. Arrow GLB remains `75435bc79c0278da5488ab05d1a97ac409cdab390e10483748c30a5aa67ad7e4`; staged and both generated arrow scenes share semantic fingerprint `6ec9138f82933e7b94e4732f0b1ea038e85c5e80565ab404ce443c36a249ac11`. Proof source identity is exactly prepared commit/tree `f2ad27f9c5dd067beca0ab8504565d781e49a9f6` / `fe3938e85227d6ea045e8da7330e48cb749c6360`.
 
 The finalized `0.0.5` raw release contains exactly 17 files / 45,819 bytes with tree digest `24f6bb3b86657716ed03958a32dee5c9db3904aa980cb0a839aacac0590cc860`, inventory SHA-256 `4984cca24b8121bc6657153304726f1f7ef05d878ca5220f3c3e2b6f2457a102`, and proof SHA-256 `4aac2274a9803a05e9ff533c02958cf1c5def66e0af1bf2fae3cc4479319f350`. Its wall GLB is 3,692 bytes with SHA-256 `1227bfbb7d5379b33f1468c1a0d7fffad07c9390654b54033f079ba602a84a37`. Review `0.0.5` contains 13 RGB `1600 × 900` PNGs plus five JSON evidence files.
 

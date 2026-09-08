@@ -24,7 +24,7 @@ def require(condition,label):
  if not condition: raise AssertionError(label)
 def main():
  parser=argparse.ArgumentParser(); parser.add_argument("--candidate-root",required=True); args=parser.parse_args(); candidate=Path(args.candidate_root)
- source=candidate/"release/raw/0.0.8/directional-arrow/rounded-outline-v1.glb"
+ source=candidate/"release/raw/0.0.9/directional-arrow/rounded-outline-v1.glb"
  with tempfile.TemporaryDirectory(prefix="aerobeat-rounded-adversarial-") as directory:
   target=Path(directory)/"cue.glb"
   doc,binary=parse_glb(source); binary=bytearray(binary)

@@ -1,16 +1,23 @@
 #!/usr/bin/env python3
-"""Fail-closed validator/finalizer for Aero Rounded 0.0.8 builds."""
+"""Fail-closed validator/finalizer for prepared Aero Rounded 0.0.9 candidates."""
 from __future__ import annotations
 import argparse, hashlib, json, math, os, shutil, struct, subprocess, sys, tempfile
 from collections import defaultdict, deque
 from pathlib import Path
 from subprocess_contract import run_checked
 
-RELEASE="0.0.8"
-APPROVED_COMMIT="ff34f05f376e57d425430afc2520c0512a53ab73"
-APPROVED_TREE="339dd8031184d11bf20272a40353c022df71d8b4"
-EXPECTED_INVENTORY_SHA256="367d5efee059144175c118df905b37cfe510a8b6ef42b727928d9494108c6e73"
-EXPECTED_PROOF_SHA256="ba0c00d5497a73a24281e5bad25b2c305b676e710c871434cf8b28b2b58190db"
+RELEASE="0.0.9"
+APPROVED_COMMIT="f2ad27f9c5dd067beca0ab8504565d781e49a9f6"
+APPROVED_TREE="fe3938e85227d6ea045e8da7330e48cb749c6360"
+EXPECTED_INVENTORY_SHA256="95ec22c1657d4931e42327e0544b86f782075288a3330a4d23b0fed07dce65fa"
+EXPECTED_PROOF_SHA256="e1726ca2bc3a0980cc86ba6184bf7da57079f7ee1e42e24094c47196a3dbace9"
+EXPECTED_RAW_FILES=17
+EXPECTED_RAW_BYTES=429209
+EXPECTED_RAW_TREE_DIGEST="979a202bf06d99ebc53588668d67e9d50df7bcd14e9b0d4e69c6dd73b09f9a00"
+EXPECTED_REVIEW_FILES=73
+EXPECTED_REVIEW_BYTES=77797749
+EXPECTED_REVIEW_TREE_DIGEST="009d21bd09b9015a3f7f9629b96122e3f462875c9a5a3ef87aab578c872b9abc"
+EXPECTED_REVIEW_HASHES_SHA256="8a7155bbd9a7878eaac37cb1a51eddc21bfb8ab861bf16e65b6d6b0b6b43d282"
 EXPECTED={
  "directional-arrow":("rounded-outline-v1",[.78,.78,.18],[0,0,0],69,1928,2432,"note_fill",True),
  "any-note":("outlined-circle-v1",[.70,.70,.18],[0,0,0],64,1788,2176,"note_fill",True),
@@ -32,10 +39,16 @@ IMMUTABLE_GIT_TREES={
  "review/0.0.5":"a1781ce69ba81d660e4ffb24ae8b47d3873c63bb",
  "review/0.0.6":"f5652c80852153e746774579e4c1fb495ea360f3",
  "review/0.0.7":"8ca78c143d78743ff1dfce1b9fcadc5755a02530",
+ "release/raw/0.0.8":"e26ec4e8278860c60568bd2a89983cd09555ee75",
+ "review/0.0.8":"df080ea57c99bb50697f14e891edad7f53dbda2a",
 }
 
 def fail(message): raise AssertionError(message)
 def sha(path): return hashlib.sha256(path.read_bytes()).hexdigest()
+def tree_digest(base):
+ files=sorted(path for path in base.rglob("*") if path.is_file())
+ rows=[f"{path.relative_to(base).as_posix()}\0{path.stat().st_size}\0{sha(path)}\n" for path in files]
+ return len(files),sum(path.stat().st_size for path in files),hashlib.sha256("".join(rows).encode("utf-8")).hexdigest()
 def load(path): return json.loads(path.read_text(encoding="utf-8"))
 def semantic_scene_fingerprint(authority,source):
  with tempfile.TemporaryDirectory(prefix="aerobeat-scene-fingerprint-") as directory:
@@ -226,10 +239,12 @@ def validate_release_inventory(release):
  if inventory!={"schema":"aerobeat.release-inventory/v1","release":RELEASE,"immutable":True,"expected_asset_count":7,"payload":payload}: fail("release inventory content/hash mismatch")
  proof=load(release/"proof.v1.json")
  if sha(release/"inventory.v1.json")!=EXPECTED_INVENTORY_SHA256 or sha(release/"proof.v1.json")!=EXPECTED_PROOF_SHA256: fail("release inventory/proof differs from audited disposable authority")
- if proof.get("schema")!="aerobeat.release-proof/v1" or proof.get("release")!=RELEASE or proof.get("inventory_sha256")!=sha(release/"inventory.v1.json") or proof.get("generator")!="aerobeat-gameplay-generator-v7" or proof.get("blender")!="4.0.2": fail("release proof identity/hash mismatch")
+ if proof.get("schema")!="aerobeat.release-proof/v1" or proof.get("release")!=RELEASE or proof.get("inventory_sha256")!=sha(release/"inventory.v1.json") or proof.get("generator")!="aerobeat-gameplay-generator-v7" or proof.get("blender")!="4.0.2" or proof.get("source_authority")!={"commit":APPROVED_COMMIT,"tree":APPROVED_TREE}: fail("release proof identity/hash mismatch")
  claims=proof.get("claims",{})
  if claims.get("changed_identities")!=["directional-arrow/rounded-outline-v1","any-note/outlined-circle-v1","guard/outlined-shield-v1"] or claims.get("byte_identical_predecessor_roles")!=["bomb","wall","track","athlete-marker"]: fail("release proof role claims")
- return len(files),sum(p.stat().st_size for p in files.values())
+ stats=tree_digest(release)
+ if stats!=(EXPECTED_RAW_FILES,EXPECTED_RAW_BYTES,EXPECTED_RAW_TREE_DIGEST): fail(f"release exact inventory anchor mismatch: {stats}")
+ return stats[0],stats[1]
 
 def validate_review(review):
  all_paths=list(review.rglob("*"))
@@ -248,6 +263,7 @@ def validate_review(review):
   width,height,depth,color=struct.unpack(">IIBB",data[16:26])
   if (width,height,depth,color)!=(1600,900,8,2): fail(f"{name}: expected RGB 1600x900, got {(width,height,depth,color)}")
  hashes=load(metadata["hashes.v1.json"])
+ if sha(metadata["hashes.v1.json"])!=EXPECTED_REVIEW_HASHES_SHA256: fail("review hashes manifest differs from audited disposable authority")
  expected_hashes=[{"path":name,"bytes":path.stat().st_size,"sha256":sha(path)} for name,path in sorted(pngs.items())]
  if hashes.get("schema")!="aerobeat.review-hashes/v1" or hashes.get("release")!=RELEASE or hashes.get("resolution")!=[1600,900] or hashes.get("renderer")!="Blender 4.0.2 EEVEE" or hashes.get("files")!=expected_hashes: fail("review PNG hash manifest mismatch")
  for key,name in (("layout","layout.v1.json"),("visibility","visibility.v1.json"),("contrast","contrast.v1.json"),("wall_grid","wall-grid.v1.json")):
@@ -255,7 +271,9 @@ def validate_review(review):
   if hashes.get(key)!=expected: fail(f"review metadata hash mismatch {name}")
  layout=load(metadata["layout.v1.json"])
  if layout.get("schema")!="aerobeat.review-layout/v1" or layout.get("release")!=RELEASE or layout.get("resolution")!=[1600,900] or set(layout.get("images",{}))!=set(pngs): fail("review layout inventory mismatch")
- return len(files),sum(p.stat().st_size for p in files.values())
+ stats=tree_digest(review)
+ if stats!=(EXPECTED_REVIEW_FILES,EXPECTED_REVIEW_BYTES,EXPECTED_REVIEW_TREE_DIGEST): fail(f"review exact inventory anchor mismatch: {stats}")
+ return stats[0],stats[1]
 
 def smoke_changed(authority,release):
  blender=shutil.which("blender")
@@ -268,12 +286,12 @@ def smoke_changed(authority,release):
    run_checked([blender,"--background","--factory-startup","--python",str(script),"--",str(path),identity],operation=f"rounded {kind} smoke {identity}",marker=f"SMOKE_OK kind={kind} identity={identity}",postcondition=lambda path=path,before=before:path.is_file() and sha(path)==before)
 
 def validate(authority,candidate,allow_canonical=False):
- raw_exists=(authority/"release/raw/0.0.8").exists(); review_exists=(authority/"review/0.0.8").exists()
+ raw_exists=(authority/"release/raw"/RELEASE).exists(); review_exists=(authority/"review"/RELEASE).exists()
  if allow_canonical:
-  candidate_raw=(candidate/"release/raw/0.0.8").exists(); candidate_review=(candidate/"review/0.0.8").exists()
-  if not candidate_raw or not candidate_review: fail("canonical validation requires both candidate 0.0.8 trees present")
-  if authority==candidate and (not raw_exists or not review_exists): fail("canonical in-place validation requires both authority 0.0.8 trees present")
- elif raw_exists or review_exists: fail("canonical 0.0.8 release/review must remain absent")
+  candidate_raw=(candidate/"release/raw"/RELEASE).exists(); candidate_review=(candidate/"review"/RELEASE).exists()
+  if not candidate_raw or not candidate_review: fail(f"canonical validation requires both candidate {RELEASE} trees present")
+  if authority==candidate and (not raw_exists or not review_exists): fail(f"canonical in-place validation requires both authority {RELEASE} trees present")
+ elif raw_exists or review_exists: fail(f"canonical {RELEASE} release/review must remain absent")
  approved_tree=subprocess.check_output(["git","rev-parse",f"{APPROVED_COMMIT}^{{tree}}"],cwd=authority,text=True).strip()
  if approved_tree!=APPROVED_TREE: fail(f"approved authority tree mismatch {approved_tree}")
  if subprocess.run(["git","merge-base","--is-ancestor",APPROVED_COMMIT,"HEAD"],cwd=authority).returncode!=0: fail("current HEAD does not descend from approved authority")
@@ -301,7 +319,7 @@ def validate(authority,candidate,allow_canonical=False):
   if role=="directional-arrow": assert_directional_arrow_contract(contract)
   elif role=="guard" and (contract.get("boundary_construction")!="independent-inset-anchor-morphological-erosion" or contract.get("cumulative_cap_offsets")!=[.014,.066,.086] or contract.get("join_policy")!="collapsed joins re-rounded independently; bands may widen but never narrow"): fail("guard: morphology metadata")
  for role,variant in UNCHANGED:
-  current=release/role/f"{variant}.glb"; predecessor=authority/"release/raw/0.0.7"/role/f"{variant}.glb"
+  current=release/role/f"{variant}.glb"; predecessor=authority/"release/raw/0.0.8"/role/f"{variant}.glb"
   if current.read_bytes()!=predecessor.read_bytes(): fail(f"{role}: selected GLB changed")
   current_source=candidate/"source"/role/variant/f"{variant}.blend"; predecessor_source=authority/"source"/role/variant/f"{variant}.blend"
   if current_source.read_bytes()!=predecessor_source.read_bytes(): fail(f"{role}: selected editable source changed")
@@ -326,5 +344,5 @@ def main():
     expected_mode=0o444 if path.is_file() else 0o555
     if (os.stat(path).st_mode&0o777)!=expected_mode: fail(f"finalized mode mismatch {path}")
  print(json.dumps({"release":RELEASE,"cues":results,"raw":{"files":release_stats[0],"bytes":release_stats[1]},"review":{"files":review_stats[0],"bytes":review_stats[1]},"canonical":args.canonical,"finalized":args.finalize},sort_keys=True))
- print("ROUNDED_VALIDATE_OK release=0.0.8 cues=3 unchanged=4")
+ print(f"ROUNDED_VALIDATE_OK release={RELEASE} cues=3 unchanged=4")
 if __name__=="__main__": main()
