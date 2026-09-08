@@ -16,7 +16,7 @@ Canonical, cross-engine gameplay art for AeroBeat. This repository owns editable
 - `release/raw/0.0.7/` — immutable marker winding/culling predecessor: the complete seven-asset shape with only `athlete-marker/sphere-v1` re-authored.
 - `release/raw/0.0.8/` — immutable Aero Rounded predecessor: three rounded/two-sided outlined cue identities plus four byte-identical `0.0.7` roles.
 - `release/raw/0.0.9/` — immutable uniform-arrow repair successor: the directional arrow uses one analytic signed-offset family; the other six GLBs remain byte-identical to `0.0.8`.
-- `0.0.10` is the prepared uniform-wall successor only. Until independent source QA/audit authorizes the one-shot builder, no canonical `release/raw/0.0.10/` or `review/0.0.10/` may exist.
+- `release/raw/0.0.10/` — immutable uniform-wall successor: only `wall/red-glass-v1` changes from `0.0.9`, removing the separate high-opacity edge cage.
 - `review/<version>/` — Blender-rendered visual evidence, calculated containment/contrast/wall-grid metadata, and hashes outside runtime releases; `review/0.0.1/` through `review/0.0.9/` are immutable after finalization.
 - `tools/` — locally authored Blender/Python generation, export, review, and strict validation scripts.
 
@@ -46,9 +46,9 @@ python3 tools/reproducibility_rounded.py --root .
 python3 tools/test_uniform_wall_release_preflight.py
 python3 tools/reproducibility_uniform_wall.py --root .
 
-# tools/build_uniform_wall_release.py is a pinned one-shot canonical driver, not a rebuild command.
-# Do not invoke it until the independent m2ep audit explicitly authorizes exactly one 0.0.10 build.
-# Once consumed, any retry requires recovery/audit rather than regeneration.
+# The pinned one-shot 0.0.10 builder authorization is consumed; never invoke it again.
+# Validate the finalized canonical trees without generating:
+python3 tools/validate_uniform_wall_candidate.py --authority-root . --candidate-root . --source-commit f7aac5236dabd6f7716ec2f17459e5669eb335b3 --source-tree faf799b7e7e5c05d5865d31f885b344e65f66815 --canonical
 ```
 
 ## Aero Rounded successor
@@ -69,13 +69,13 @@ Blender `4.0.2` may embed nondeterministic save/container metadata, so raw `.ble
 
 Prepared `0.0.9` authority was established with two independent isolated generations matching all 17 raw files and all 73 review files byte-for-byte. The one freshly authorized canonical builder invocation then reproduced those exact audited bytes from final audit authority commit/tree `80378c51b167c329f4c0df4a81510fcd4fe28e6b` / `27f0caafa3928476b917631f9e3319f6c0b3aa89` with generation count `1`. Final raw is 17 files / 429,209 bytes with tree digest `979a202bf06d99ebc53588668d67e9d50df7bcd14e9b0d4e69c6dd73b09f9a00`, inventory SHA-256 `95ec22c1657d4931e42327e0544b86f782075288a3330a4d23b0fed07dce65fa`, and proof SHA-256 `e1726ca2bc3a0980cc86ba6184bf7da57079f7ee1e42e24094c47196a3dbace9`. Final review is 73 files / 77,797,749 bytes with tree digest `009d21bd09b9015a3f7f9629b96122e3f462875c9a5a3ef87aab578c872b9abc` and hashes-manifest SHA-256 `8a7155bbd9a7878eaac37cb1a51eddc21bfb8ab861bf16e65b6d6b0b6b43d282`. Arrow GLB is 152,916 bytes / `75435bc79c0278da5488ab05d1a97ac409cdab390e10483748c30a5aa67ad7e4`; staged and canonical arrow scenes share semantic fingerprint `6ec9138f82933e7b94e4732f0b1ea038e85c5e80565ab404ce443c36a249ac11`. Proof source identity is exactly prepared commit/tree `f2ad27f9c5dd067beca0ab8504565d781e49a9f6` / `fe3938e85227d6ea045e8da7330e48cb749c6360`. Canonical raw/review directories are finalized read-only at directory/file modes `0555` / `0444`; all 16 predecessor Git trees remain exact.
 
-### Prepared uniform-wall successor
+### Finalized uniform-wall successor
 
 `0.0.10` re-authors only `wall/red-glass-v1`. The physical dark rails and wedges came from the predecessor's separate 96-triangle `mat/red_edge` cage at alpha `0.82` over its 12-triangle alpha-`0.24` body. The prepared source is one closed 12-triangle / eight-welded-vertex box, one `mat/red_glass` primitive, one alpha `0.24`, exact `0.94 × 0.94 × 1.0` bounds and centered pivot. It has no edge cage, secondary material, texture, external dependency, runtime override, or transparent depth write. Its true geometric boundary retains the silhouette while removing high-opacity internal/top/bottom/side rails across interval scaling.
 
 The candidate generator copies the other six GLBs and release manifests byte-for-byte from immutable `0.0.9`. Review evidence adds fifteen wall views spanning five camera directions and dark/bright/blue backgrounds, plus the existing gameplay-context and one/three-cell wall-grid proofs. `tools/validate_uniform_wall_candidate.py` requires one primitive/material, exact explicit-normal topology/bounds/alpha, closed welded topology, wall-only release proof, six-role byte identity, 17 raw files, and 83 review PNGs with hash binding. `tools/test_uniform_wall.py` rejects a second primitive, edge material, alpha `0.82`, transparent depth write, and the immutable `0.0.9` edge-cage wall. `tools/reproducibility_uniform_wall.py` is candidate-only and requires two clean isolated raw/review trees to match byte-for-byte plus three identical semantic Blender source fingerprints.
 
-No canonical `0.0.10` build is authorized by source preparation or candidate QA. The exact source authority commit/tree, audited candidate hashes, and one-shot builder authorization must be recorded before the canonical invocation.
+Independent QA and source audit authorized exactly one invocation from generation authority `f7aac5236dabd6f7716ec2f17459e5669eb335b3` / tree `faf799b7e7e5c05d5865d31f885b344e65f66815`; tooling authority was `e0753e06619da473ac0ddc30bada16d67f6d584a` / tree `b9e9b385c509daea57ca7b5d814fd108882c3ac2`. That authorization is consumed. Canonical raw is 17 files / 427,876 bytes / tree digest `839f38302fbe490732d94eec4fcb867f112ddc4c063b14e1034082078c327d2c`, with inventory `a8eb2ea1306a6bf760b66b835d4b0dd3359601b46b1df682fe3805ee7e7e2bc8`, proof `017a6c0efaf48f85130380d774502f25785783a7ad69d400f8c0f2275855c242`, and wall GLB `6a336116709c2f3c1d92453fe1b3a2821e03d31128dae72d0fc700627fa94cd7`. Canonical review is 88 files / 94,621,710 bytes / tree digest `86ff93353e27f3562dfb33583f6e031953893a47c9f890704f807b619e110cb7`, with hashes manifest `e2244580557069c212f005b460680377e1d1e99861677007acffbd681a41c0bd`. Both trees are finalized read-only at directory/file modes `0555` / `0444`; correction requires a new version.
 
 The finalized `0.0.5` raw release contains exactly 17 files / 45,819 bytes with tree digest `24f6bb3b86657716ed03958a32dee5c9db3904aa980cb0a839aacac0590cc860`, inventory SHA-256 `4984cca24b8121bc6657153304726f1f7ef05d878ca5220f3c3e2b6f2457a102`, and proof SHA-256 `4aac2274a9803a05e9ff533c02958cf1c5def66e0af1bf2fae3cc4479319f350`. Its wall GLB is 3,692 bytes with SHA-256 `1227bfbb7d5379b33f1468c1a0d7fffad07c9390654b54033f079ba602a84a37`. Review `0.0.5` contains 13 RGB `1600 × 900` PNGs plus five JSON evidence files.
 

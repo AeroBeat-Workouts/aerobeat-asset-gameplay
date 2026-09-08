@@ -46,9 +46,12 @@ def validate_wall(path):
  if value.get("extras",{}).get("aerobeat")!=expected_extra: fail("wall material runtime semantics")
  return {"weldedVertices":len(set(points)),"explicitCorners":len(positions),"triangles":len(indices)//3,"materials":len(material),"sha256":sha(path),"bytes":path.stat().st_size}
 def main():
- ap=argparse.ArgumentParser();ap.add_argument("--authority-root",required=True);ap.add_argument("--candidate-root",required=True);ap.add_argument("--source-commit");ap.add_argument("--source-tree");a=ap.parse_args()
+ ap=argparse.ArgumentParser();ap.add_argument("--authority-root",required=True);ap.add_argument("--candidate-root",required=True);ap.add_argument("--source-commit");ap.add_argument("--source-tree");ap.add_argument("--canonical",action="store_true");a=ap.parse_args()
  authority=Path(a.authority_root).resolve();candidate=Path(a.candidate_root).resolve();raw=candidate/"release/raw"/RELEASE;review=candidate/"review"/RELEASE
- if not raw.is_dir() or not review.is_dir() or raw.resolve().is_relative_to((authority/"release/raw").resolve()): fail("candidate must be isolated")
+ if not raw.is_dir() or not review.is_dir(): fail("release and review trees are required")
+ if a.canonical:
+  if candidate!=authority: fail("canonical validation requires candidate root equal authority root")
+ elif raw.resolve().is_relative_to((authority/"release/raw").resolve()): fail("candidate must be isolated")
  inventory=load(raw/"inventory.v1.json");proof=load(raw/"proof.v1.json")
  files=[path for path in raw.rglob("*") if path.is_file()]
  if len(files)!=17 or inventory.get("release")!=RELEASE or inventory.get("expected_asset_count")!=7: fail("exact candidate raw inventory")
