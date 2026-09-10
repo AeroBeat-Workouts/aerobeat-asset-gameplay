@@ -13,13 +13,14 @@ import bpy
 from bpy_extras.object_utils import world_to_camera_view
 from mathutils import Vector
 
-SUPPORTED_RELEASE = "0.0.10"
-PREDECESSOR_RELEASE = "0.0.9"
+SUPPORTED_RELEASE = "0.0.11"
+PREDECESSOR_RELEASE = "0.0.10"
 VERSION = None
 BLENDER = "4.0.2"
-GENERATOR = "aerobeat-gameplay-generator-v8"
-CHANGED_SOURCE_ROLES = {"wall"}
+GENERATOR = "aerobeat-gameplay-generator-v9"
+CHANGED_SOURCE_ROLES = {"athlete-marker"}
 ROUNDED_SOURCE_ROLES = {"directional-arrow", "any-note", "guard"}
+CUE_FACE_REVIEW_ROLES = {"wall"}
 
 ASSETS = [
     dict(role="directional-arrow", variant="rounded-outline-v1", dimensions=[0.78,0.78,0.18], pivot=[0,0,0], budget=2432, expected_triangles=1928, samples=69, bevel=.012, bound=[[-0.42,-0.42,-0.11],[0.42,0.42,0.11]], reuse="one mesh for Flow and Boxing; rotate only about local Z"),
@@ -28,7 +29,7 @@ ASSETS = [
     dict(role="bomb", variant="urchin-v1", dimensions=[0.78,0.78,0.78], pivot=[0,0,0], budget=900, bound=[[-0.42,-0.42,-0.42],[0.42,0.42,0.42]], reuse="one bomb mesh for every bomb event"),
     dict(role="wall", variant="red-glass-v1", dimensions=[0.94,0.94,1.00], pivot=[0,0,0], budget=12, expected_triangles=12, bound=[[-0.47,-0.47,-0.50],[0.47,0.47,0.50]], reuse="one canonical 0.94 x 0.94 cell footprint at unit X/Y scale; scale only Z to authoritative L=max(0.08,speedWorldUnitsPerMs*(endTimestampMs-centerTimestampMs)); adjacent 1.0-pitch cells retain a 0.06 gap"),
     dict(role="track", variant="blue-glass-v1", dimensions=[4.20,0.06,24.00], pivot=[0,0.03,0], budget=160, bound=[[-2.14,-0.04,-12.04],[2.14,0.08,12.04]], reuse="one canonical segment; extend by deterministic segment reuse, never stretch lane-line width"),
-    dict(role="athlete-marker", variant="sphere-v1", dimensions=[0.18,0.18,0.18], pivot=[0,0,0], budget=192, bound=[[-0.10,-0.10,-0.10],[0.10,0.10,0.10]], reuse="same full 3D sphere for nose and both wrists; truthful world positions and normal depth"),
+    dict(role="athlete-marker", variant="sphere-v1", dimensions=[0.18,0.18,0.18], pivot=[0,0,0], budget=1200, bound=[[-0.10,-0.10,-0.10],[0.10,0.10,0.10]], reuse="same full 3D sphere for nose and both wrists; truthful world positions and normal depth"),
 ]
 LEGACY_VARIANTS = (("directional-arrow","outline-v1"),("any-note","circle-v1"),("guard","shield-v1"))
 
@@ -412,19 +413,30 @@ def build_geometry(role):
         for x in (-2.088,-.7,.7,2.088):
             cv,cf=box(x-.012,x+.012,-.006,0,-12,12); add_comp(v,f,mi,cv,cf,matn("cyan_edge"))
     elif role=="athlete-marker":
-        # One canonical 0.18-unit sphere. Its single closed surface is partitioned,
-        # never layered: tintable panels are bounded by white structure and a dark
-        # separator grid around all three coordinate planes. Every camera hemisphere
-        # therefore sees all three materials without coplanar or intersecting shells.
-        cv,cf=uv_sphere(.09)
-        # uv_sphere's legacy order is inward for this coordinate convention. Reverse
-        # only the marker successor so glTF CCW front faces point outward while all
-        # immutable non-marker assets retain their exact predecessor bytes.
+        # 0.0.11 tint-dominant re-authoring. The 0.0.7/0.0.10 marker put its exact
+        # geometric center on a white equatorial strip (front face ~52% white), so the
+        # unrotated marker read as a transparent cutout against the bright sky and the
+        # wrists never read song-colored. This successor makes the runtime-tintable core
+        # the dominant surface: a fine 47-ring UV sphere whose only structural keyline is
+        # a thin polar band (charcoal cap + adjacent white seam at each pole). The north
+        # (+Y) cap, the south cap, and the entire +Z front hemisphere are therefore tint,
+        # so the unrotated web marker's exact center always reads role-color.
+        cv,cf=uv_sphere(.09,rings=47)
         cf=[(a,c,b) for a,b,c in cf]
+        nv=len(cv); nseg=12; rings_count=47
+        def ring_index(vertex):
+            if vertex==0: return 0
+            if vertex>=nv-1: return rings_count+1
+            return (vertex-1)//nseg+1
+        cap_rings=3
         for face in cf:
-            center=[sum(cv[i][axis] for i in face)/(3*.09) for axis in range(3)]
-            plane_distance=min(abs(value) for value in center)
-            material_name="charcoal" if plane_distance<=.08 else ("white" if plane_distance<=.22 else "tint_base")
+            lo=min(ring_index(i) for i in face); hi=max(ring_index(i) for i in face)
+            if hi<=cap_rings or lo>=rings_count+1-cap_rings:
+                material_name="charcoal"
+            elif (hi==cap_rings+1 and lo>=cap_rings) or (lo==rings_count+1-(cap_rings+1) and hi<=rings_count+1-cap_rings):
+                material_name="white"
+            else:
+                material_name="tint_base"
             mi.append(matn(material_name))
         v.extend(cv); f.extend(cf)
     return v,f,mi,names
@@ -451,7 +463,7 @@ def write_glb(path,obj,material_names):
     role=obj.name.split("/",1)[0]
     source_positions=[tuple(v.co) for v in obj.data.vertices]
     indices_by_material=[]; normals=None
-    if role in CHANGED_SOURCE_ROLES:
+    if role in CHANGED_SOURCE_ROLES or role=="athlete-marker":
         # Split corners in the GLB only, retaining one welded editable Blender mesh.
         # This permits explicit face/seam normals while topology validation welds the
         # identical geometric positions and proves the single manifold exterior.
@@ -745,11 +757,11 @@ def review(root):
     camera,_=fit_camera([x[2] for x in compare]+panels+labels,direction=(0,0,-1),margin=.035,lens=52,orthographic=True)
     p=rd/"visibility-comparison.png"; render(p); images.append(p)
     layouts[p.name]={"kind":"visibility-comparison","minimum_margin":.035,"backgrounds":[x[0] for x in rows],"counts_per_release":{"athlete-marker":3},"backface_culling":True,"objects":[layout_entry(camera,r,v,o,n,release) for r,v,o,n,release in compare]}
-    visibility={"schema":"aerobeat.marker-visibility-review/v1","release":VERSION,"predecessor":PREDECESSOR_RELEASE,"image":"visibility-comparison.png","backgrounds":[x[0] for x in rows],"camera":"consistent -Z review-facing mini-scenes; actual release GLBs","counts_per_release":{"athlete-marker":3},"geometry":{PREDECESSOR_RELEASE:{"dimensions":[.18,.18,.18],"triangles":168},VERSION:{"dimensions":[.18,.18,.18],"triangles":168,"outward_ccw":True,"embedded_normal_agreement":True}},"materials":{PREDECESSOR_RELEASE:{"names":["mat/charcoal","mat/white","mat/tint_base"],"alpha":1.0,"alpha_mode":"OPAQUE","backface_culling":True,"rejected_inward_winding":True},VERSION:{"names":["mat/charcoal","mat/white","mat/tint_base"],"alpha":1.0,"alpha_mode":"OPAQUE","blend":"opaque","cull":"back","depth_test":True,"depth_write":True,"backface_culling":True,"runtime_tint_material":"mat/tint_base","structural_materials":["mat/white","mat/charcoal"]}},"glb_sha256":{PREDECESSOR_RELEASE:old_marker,VERSION:new_marker}}
+    visibility={"schema":"aerobeat.marker-visibility-review/v1","release":VERSION,"predecessor":PREDECESSOR_RELEASE,"image":"visibility-comparison.png","backgrounds":[x[0] for x in rows],"camera":"consistent -Z review-facing mini-scenes; actual release GLBs","counts_per_release":{"athlete-marker":3},"geometry":{PREDECESSOR_RELEASE:{"dimensions":[.18,.18,.18],"triangles":168,"outward_ccw":True,"embedded_normal_agreement":True},VERSION:{"dimensions":[.18,.18,.18],"triangles":1128,"outward_ccw":True,"embedded_normal_agreement":True,"tint_dominant":True}},"materials":{PREDECESSOR_RELEASE:{"names":["mat/charcoal","mat/white","mat/tint_base"],"alpha":1.0,"alpha_mode":"OPAQUE","backface_culling":True,"rejected_inward_winding":True},VERSION:{"names":["mat/charcoal","mat/white","mat/tint_base"],"alpha":1.0,"alpha_mode":"OPAQUE","blend":"opaque","cull":"back","depth_test":True,"depth_write":True,"backface_culling":True,"runtime_tint_material":"mat/tint_base","structural_materials":["mat/white","mat/charcoal"]}},"glb_sha256":{PREDECESSOR_RELEASE:old_marker,VERSION:new_marker}}
     visibility["materials"][PREDECESSOR_RELEASE]={"names":["mat/charcoal","mat/white","mat/tint_base"],"alpha":1.0,"alpha_mode":"OPAQUE","backface_culling":True,"outward_ccw":True}
-    visibility["materials"][VERSION]={**visibility["materials"][PREDECESSOR_RELEASE],"blend":"opaque","cull":"back","depth_test":True,"depth_write":True,"runtime_tint_material":"mat/tint_base","structural_materials":["mat/white","mat/charcoal"],"byte_identical_to_predecessor":True}
+    visibility["materials"][VERSION]={**visibility["materials"][PREDECESSOR_RELEASE],"blend":"opaque","cull":"back","depth_test":True,"depth_write":True,"runtime_tint_material":"mat/tint_base","structural_materials":["mat/white","mat/charcoal"],"tint_dominant":True}
     visibility["geometry"][PREDECESSOR_RELEASE]={"dimensions":[.18,.18,.18],"triangles":168,"outward_ccw":True,"embedded_normal_agreement":True}
-    visibility["geometry"][VERSION]={**visibility["geometry"][PREDECESSOR_RELEASE],"byte_identical_to_predecessor":True}
+    visibility["geometry"][VERSION]={"dimensions":[.18,.18,.18],"triangles":1128,"outward_ccw":True,"embedded_normal_agreement":True,"tint_dominant":True}
     write_json(rd/"visibility.v1.json",visibility)
     # Camera-accessible marker evidence covers every cardinal hemisphere on both
     # bright and dark fields. The source remains exactly 0.18 units in every axis.
@@ -770,7 +782,7 @@ def review(root):
         x,y=linear_luminance(a),linear_luminance(b)
         return round((max(x,y)+.05)/(min(x,y)+.05),6)
     bright=COLORS["bright_ice"][0][:3]; dark=COLORS["dark_ice"][0][:3]; white=COLORS["white"][0][:3]; charcoal=COLORS["charcoal"][0][:3]
-    contrast_evidence={"schema":"aerobeat.athlete-marker-contrast/v1","release":VERSION,"backgrounds":["BRIGHT","DARK"],"images":face_images,"camera_faces":[x[0] for x in camera_directions],"materials":{"alpha":1.0,"alpha_mode":"OPAQUE","blend":"opaque","cull":"back","depth_test":True,"depth_write":True,"backface_culling":True,"analytic_only":True,"runtime_tint_material":"mat/tint_base","structural_materials":["mat/white","mat/charcoal"]},"geometry":{"dimensions":[.18,.18,.18],"surface":"one closed partitioned sphere","explicit_normals":True,"outward_ccw":True,"geometric_normal_agreement":True,"coplanar_overlapping_faces":False,"material_triangle_counts":{"mat/charcoal":24,"mat/white":80,"mat/tint_base":64},"all_materials_visible_each_camera_direction":True,"exterior_visible_with_backface_culling":True},"analytic_contrast":{"white_vs_charcoal":contrast(white,charcoal),"charcoal_vs_bright_ice":contrast(charcoal,bright),"white_vs_dark_ice":contrast(white,dark),"minimum_structural_required":7.0}}
+    contrast_evidence={"schema":"aerobeat.athlete-marker-contrast/v1","release":VERSION,"backgrounds":["BRIGHT","DARK"],"images":face_images,"camera_faces":[x[0] for x in camera_directions],"materials":{"alpha":1.0,"alpha_mode":"OPAQUE","blend":"opaque","cull":"back","depth_test":True,"depth_write":True,"backface_culling":True,"analytic_only":True,"runtime_tint_material":"mat/tint_base","structural_materials":["mat/white","mat/charcoal"]},"geometry":{"dimensions":[.18,.18,.18],"surface":"one closed tint-dominant partitioned sphere with thin polar keyline band","explicit_normals":True,"outward_ccw":True,"geometric_normal_agreement":True,"coplanar_overlapping_faces":False,"material_triangle_counts":{"mat/charcoal":120,"mat/white":48,"mat/tint_base":960},"tint_dominant":True,"all_materials_visible_each_camera_direction":True,"exterior_visible_with_backface_culling":True},"analytic_contrast":{"white_vs_charcoal":contrast(white,charcoal),"charcoal_vs_bright_ice":contrast(charcoal,bright),"white_vs_dark_ice":contrast(white,dark),"minimum_structural_required":7.0}}
     write_json(rd/"contrast.v1.json",contrast_evidence)
     # Actual generated-GLB cue faces on every required analytic field. These remain
     # disposable review evidence unless a later independent audit authorizes release.
@@ -837,6 +849,7 @@ def material_manifest(role,names):
             "winding":"outward-ccw","geometric_normal_agreement":True,"source_backface_culling":True,
             "runtime_tint_material":"mat/tint_base","structural_materials":["mat/white","mat/charcoal"],
             "all_camera_directions":["+X","-X","+Y","-Y","+Z","-Z"],
+            "tint_dominant":True,"keyline":"thin polar band (charcoal cap + white seam at each pole)",
             "coplanar_overlapping_faces":False,"canonical_instances":["nose","left-wrist","right-wrist"]}
     return result
 
@@ -883,8 +896,7 @@ def main():
         if p.is_file(): payload.append({"path":p.relative_to(rel).as_posix(),"bytes":p.stat().st_size,"sha256":sha(p)})
     inv={"schema":"aerobeat.release-inventory/v1","release":VERSION,"immutable":True,"expected_asset_count":7,"payload":payload}
     write_json(rel/"inventory.v1.json",inv)
-    proof={"schema":"aerobeat.release-proof/v1","release":VERSION,"inventory_sha256":sha(rel/"inventory.v1.json"),"generator":GENERATOR,"blender":BLENDER,"source_authority":{"commit":a.source_commit,"tree":a.source_tree},"determinism":{"scope":"every file under release/raw/%s"%VERSION,"method":"primary plus two clean temporary byte comparisons","blend_snapshots_in_scope":False},"blend_snapshot_limitation":"Blender .blend container bytes are not claimed deterministic; tracked editable snapshots are subordinate to tools/generate.py.","claims":{"separate_glbs":True,"combined_glb":False,"analytic_materials_only":True,"textures":0,"external_dependencies":0,"canonical_shields":1,"guard_instances_required":2,"changed_identity":"athlete-marker/sphere-v1","byte_identical_predecessor_roles":["directional-arrow","any-note","guard","bomb","wall","track"],"directional_arrow":{"opacity":1.0,"alpha_mode":"OPAQUE","depth_test":True,"depth_write":True,"styled_faces":["+Z","-Z"],"coplanar_overlapping_caps":False,"renderer_y_flip":False,"runtime_tint_targets":["red","yellow","green"],"screen_direction_rotation_degrees":SCREEN_DIRECTIONS},"track":{"opacity":0.52,"predecessor_opacity":0.20,"opacity_multiplier":2.6,"alpha_mode":"BLEND","depth_write":False,"order":"after-grid-before-wall"},"wall":{"source_dimensions":[0.94,0.94,1.0],"unit_cell_footprint":[0.94,0.94],"cell_pitch":[1.0,1.0],"adjacent_gap":[0.06,0.06],"xy_scale_authoritative":[1,1],"z_scale_authoritative":True,"centered_pivot":True,"closed_body":True,"body_triangles":12,"material_primitives":1,"edge_cage":False,"uniform_surface":True,"adjacent_instances_overlap":False},"athlete_marker":{"dimensions":[0.18,0.18,0.18],"canonical_identity":"athlete-marker/sphere-v1","canonical_instances":["nose","left-wrist","right-wrist"],"opacity":1.0,"alpha_mode":"OPAQUE","depth_test":True,"depth_write":True,"explicit_normals":True,"winding":"outward-ccw","geometric_normal_agreement":True,"source_backface_culling":True,"runtime_tint_material":"mat/tint_base","structural_materials":["mat/white","mat/charcoal"],"all_camera_directions":["+X","-X","+Y","-Y","+Z","-Z"],"coplanar_overlapping_faces":False}}}
-    proof={"schema":"aerobeat.release-proof/v1","release":VERSION,"inventory_sha256":sha(rel/"inventory.v1.json"),"generator":GENERATOR,"blender":BLENDER,"source_authority":{"commit":a.source_commit,"tree":a.source_tree},"determinism":{"scope":f"every file under release/raw/{VERSION}","method":"two independent disposable temporary byte comparisons","blend_snapshots_in_scope":False},"blend_snapshot_limitation":"Blender .blend container bytes are not claimed deterministic; tracked editable snapshots are subordinate to tools/generate.py.","claims":{"separate_glbs":True,"combined_glb":False,"analytic_materials_only":True,"textures":0,"external_dependencies":0,"canonical_shields":1,"guard_instances_required":2,"changed_identities":["wall/red-glass-v1"],"byte_identical_predecessor_roles":["directional-arrow","any-note","guard","bomb","track","athlete-marker"],"rounded_cues":{"triangle_formula":"28N-4","expected_triangles":{"directional-arrow":1928,"any-note":1788,"guard":1172},"ceilings":{"directional-arrow":2432,"any-note":2176,"guard":1536},"styled_faces":["+Z","-Z"],"bands":["outline_charcoal","outline_white","outline_charcoal","fill"],"coplanar_overlapping_caps":False,"explicit_normals":True,"winding":"outward-ccw"},"directional_arrow":{"renderer_y_flip":False,"screen_direction_rotation_degrees":SCREEN_DIRECTIONS},"track":{"opacity":0.52,"predecessor_opacity":0.20,"opacity_multiplier":2.6,"alpha_mode":"BLEND","depth_write":False,"order":"after-grid-before-wall"},"wall":{"source_dimensions":[0.94,0.94,1.0],"unit_cell_footprint":[0.94,0.94],"cell_pitch":[1.0,1.0],"adjacent_gap":[0.06,0.06],"xy_scale_authoritative":[1,1],"z_scale_authoritative":True,"centered_pivot":True,"closed_body":True,"body_triangles":12,"material_primitives":1,"edge_cage":False,"uniform_surface":True,"adjacent_instances_overlap":False},"athlete_marker":{"dimensions":[0.18,0.18,0.18],"canonical_identity":"athlete-marker/sphere-v1","canonical_instances":["nose","left-wrist","right-wrist"],"byte_identical_to_predecessor":True}}}
+    proof={"schema":"aerobeat.release-proof/v1","release":VERSION,"inventory_sha256":sha(rel/"inventory.v1.json"),"generator":GENERATOR,"blender":BLENDER,"source_authority":{"commit":a.source_commit,"tree":a.source_tree},"determinism":{"scope":f"every file under release/raw/{VERSION}","method":"two independent disposable temporary byte comparisons","blend_snapshots_in_scope":False},"blend_snapshot_limitation":"Blender .blend container bytes are not claimed deterministic; tracked editable snapshots are subordinate to tools/generate.py.","claims":{"separate_glbs":True,"combined_glb":False,"analytic_materials_only":True,"textures":0,"external_dependencies":0,"canonical_shields":1,"guard_instances_required":2,"changed_identities":["athlete-marker/sphere-v1"],"byte_identical_predecessor_roles":["directional-arrow","any-note","guard","bomb","wall","track"],"rounded_cues":{"triangle_formula":"28N-4","expected_triangles":{"directional-arrow":1928,"any-note":1788,"guard":1172},"ceilings":{"directional-arrow":2432,"any-note":2176,"guard":1536},"styled_faces":["+Z","-Z"],"bands":["outline_charcoal","outline_white","outline_charcoal","fill"],"coplanar_overlapping_caps":False,"explicit_normals":True,"winding":"outward-ccw"},"directional_arrow":{"renderer_y_flip":False,"screen_direction_rotation_degrees":SCREEN_DIRECTIONS},"track":{"opacity":0.52,"predecessor_opacity":0.20,"opacity_multiplier":2.6,"alpha_mode":"BLEND","depth_write":False,"order":"after-grid-before-wall"},"wall":{"source_dimensions":[0.94,0.94,1.0],"unit_cell_footprint":[0.94,0.94],"cell_pitch":[1.0,1.0],"adjacent_gap":[0.06,0.06],"xy_scale_authoritative":[1,1],"z_scale_authoritative":True,"centered_pivot":True,"closed_body":True,"body_triangles":12,"material_primitives":1,"edge_cage":False,"uniform_surface":True,"adjacent_instances_overlap":False},"athlete_marker":{"dimensions":[0.18,0.18,0.18],"canonical_identity":"athlete-marker/sphere-v1","canonical_instances":["nose","left-wrist","right-wrist"],"opacity":1.0,"alpha_mode":"OPAQUE","depth_test":True,"depth_write":True,"explicit_normals":True,"winding":"outward-ccw","geometric_normal_agreement":True,"source_backface_culling":True,"tint_dominant":True,"runtime_tint_material":"mat/tint_base","structural_materials":["mat/white","mat/charcoal"],"keyline":"thin polar band (charcoal cap + white seam at each pole)","all_camera_directions":["+X","-X","+Y","-Y","+Z","-Z"],"coplanar_overlapping_faces":False}}}
     write_json(rel/"proof.v1.json",proof)
     review(root)
     expected_release={"inventory.v1.json","proof.v1.json","sets/default-v1.json"}
@@ -900,12 +912,13 @@ def main():
     review_dir=root/"review"/VERSION
     actual_review_pngs={p.name for p in review_dir.glob("*.png")}
     marker_faces={f"athlete-marker--sphere-v1--{face}-{background}.png" for face in ("plus-x","minus-x","plus-y","minus-y","plus-z","minus-z") for background in ("bright","dark")}
-    cue_faces={f"{s['role']}--{s['variant']}--{face}-{background}.png" for s in ASSETS if s["role"] in (ROUNDED_SOURCE_ROLES|CHANGED_SOURCE_ROLES) for face in ("plus-z","minus-z","plus-x","three-quarter-plus-z","three-quarter-minus-z") for background in ("dark","bright","blue")}
+    cue_faces={f"{s['role']}--{s['variant']}--{face}-{background}.png" for s in ASSETS if s["role"] in (ROUNDED_SOURCE_ROLES|CUE_FACE_REVIEW_ROLES) for face in ("plus-z","minus-z","plus-x","three-quarter-plus-z","three-quarter-minus-z") for background in ("dark","bright","blue")}
     expected_review_pngs={"neutral-board.png","gameplay-context.png","wall-grid-comparison.png","visibility-comparison.png"}|marker_faces|cue_faces|{s["role"]+"--"+s["variant"]+".png" for s in ASSETS}
     actual_review_metadata={p.name for p in review_dir.glob("*.json")}
     if actual_release!=expected_release: raise RuntimeError(f"generation release postcondition mismatch: {sorted(actual_release)}")
     if actual_sources!=expected_sources: raise RuntimeError(f"generation source postcondition mismatch: {sorted(actual_sources)}")
     if actual_manifests!=expected_manifests: raise RuntimeError(f"generation manifest postcondition mismatch: {sorted(actual_manifests)}")
+    expected_review_pngs|={"wall--red-glass-v1.png"}
     if actual_review_pngs!=expected_review_pngs or actual_review_metadata!={"hashes.v1.json","layout.v1.json","visibility.v1.json","contrast.v1.json","wall-grid.v1.json"}: raise RuntimeError("generation review postcondition mismatch")
     if {p.name for p in (root/"sets").glob("*.json")}!={"default-v1.json"}: raise RuntimeError("generation set postcondition mismatch")
     print(f"GENERATE_OK release={VERSION} assets=7 sources=10 manifests=10 release_files=17 review_pngs={len(actual_review_pngs)} review_metadata={len(actual_review_metadata)}")

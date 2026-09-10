@@ -35,7 +35,7 @@ if canonical in rounded_counts:
         agreement.extend(unit.dot(Vector(normals[i])) for i in tri)
     if min(agreement)<=.9: raise RuntimeError(f"rounded cue NORMAL agreement failed: {min(agreement)}")
 elif canonical=="athlete-marker/sphere-v1":
-    if normals is None or len(normals)!=len(positions) or len(faces)!=168: raise RuntimeError("marker exact POSITION/NORMAL/face count failed")
+    if normals is None or len(normals)!=len(positions) or len(faces)!=1128: raise RuntimeError("marker exact POSITION/NORMAL/face count failed")
     winding=[]; agreement=[]
     for tri in faces:
         a,b,c=(Vector(positions[i]) for i in tri); geometric=(b-a).cross(c-a); centroid=(a+b+c)/3

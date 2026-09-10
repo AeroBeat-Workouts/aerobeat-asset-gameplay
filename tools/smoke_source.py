@@ -33,7 +33,7 @@ elif canonical == "wall/red-glass-v1":
     if not obj.data.materials[0].use_backface_culling:
         raise RuntimeError("source uniform wall backface culling is disabled")
 elif canonical == "athlete-marker/sphere-v1":
-    if len(obj.data.polygons) != 168 or len(obj.data.vertices) != 86 or len(obj.data.materials) != 3:
+    if len(obj.data.polygons) != 1128 or len(obj.data.vertices) != 566 or len(obj.data.materials) != 3:
         raise RuntimeError("source marker exact mesh/material counts failed")
     polygon_dots = [polygon.normal.dot(polygon.center) for polygon in obj.data.polygons]
     vertex_dots = [vertex.normal.dot(vertex.co.normalized()) for vertex in obj.data.vertices]
