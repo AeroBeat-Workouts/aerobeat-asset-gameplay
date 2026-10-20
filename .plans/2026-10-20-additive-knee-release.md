@@ -1,6 +1,6 @@
 # Additive knee gameplay art release 0.0.13
 
-**Status:** approved Section C/D asset-release coder slice; Assembly Bead `aerobeat-web-assembly-gmnl.6.2` claimed and in progress pending independent parent review. Owner: asset art-tools coder. **Next acceptance:** pinned `e22858e` two-clean-build, SHA and native smoke gates passed; audited files were promoted only to new `0.0.13` paths, checked again, finalized read-only, and documented. Commit/push then parent independently verifies before closing Bead. No UI fidelity contract applies: knee images were inspiration and independent human approvals, not exact mockups.
+**Status:** completed asset-only release `0.0.13`, pushed as `54e83d8`, independently checked by the Assembly parent; Bead `aerobeat-web-assembly-gmnl.6.2` closed. Pinned `e22858e` source passed two Cookie builds, exact raw/review bytes and native Blender smoke. This release alone does not ship knee gameplay. No UI fidelity contract applies: knee images were inspiration and independent human approvals, not exact mockups.
 
 ## Decision and scope
 
@@ -18,13 +18,17 @@ Derrick separately approved floating `knee-target/hover-shell-strike-v1` *for no
 1. **Inspect predecessor and choose minimal contract** (complete): reuse 0.0.12 seven GLBs and seven manifests without mutation; add two GLBs, v1 manifests, nine-role set, inventory/proof, source snapshots, and additive review PNGs. Exact 0.0.12 files cannot be made byte-identical to changed set/inventory/proof; carry the old set and its hash only in immutable 0.0.12 and change only the new set. Bead `.6.2`.
 2. **Implement candidate-only staging and validator** (complete): check unused 0.0.13 paths, pinned generator source commit/tree, predecessor immutable Git tree, correct permitted raw contents, full SHA manifests, independent identities/geometry/materials, and smoke. No canonical writes until proof passes. Bead `.6.2`.
 3. **Run genuine two-build release proof** (complete): invoke pinned Cookie Blender 4.0.2 generators into two empty roots; strict validate per root, compare raw/review files byte-for-byte and two semantic scene fingerprints; record hashes/commands. Bead `.6.2`.
-4. **Promote and document only if green** (complete, pending commit/push and parent QA): stage approved bytes, validate canonical and predecessor unchanged, commit/push asset-only release with README update; parent separately verifies/owns Bead closure. Bead `.6.2`.
+4. **Promote and document only if green** (complete; committed/pushed, parent independent review passed): stage approved bytes, validate canonical and predecessor unchanged, commit/push asset-only release with README update; parent separately verifies/owns Bead closure. Bead `.6.2`.
 
 ## Current guardrails and release gate review
 
 - Keep: asset `AGENTS.md` final rule (strict validation, Blender source/GLB smoke, two independent temporary builds), README's semantic `.blend` source equivalence and raw/review exact bytes, 0.0.12 predecessor and source Git identities.
 - No added speculative security/provenance layer; top-level inventory and proof are existing required layout. Avoid mutable-source binary hashes in cross-root manifests/proof, which would falsify strict deterministic release bytes.
 - Runtime visual scale, actual knee tracking, scoring and public cutover remain Assembly Section D work; this art release does not claim them.
+
+## Parent independent review
+
+After the asset commit, the Assembly parent reran the strict validator against the read-only canonical release in the clean asset checkout and against both separate Cookie temporary builds. All three reported raw `(21, 703820, 3f8f2180388525930595d87fae454f8938b5ed550ece784c28914e9c0e4c7492)` and review `(24, 10659863, a6b03de3ce742ecc30bfe66292a72cafd5dfb3bab38498840754ef01092a6172)` exactly. It independently reran the Cookie pinned-source `--smoke` path on temp build `-a`; Blender source and GLB imports passed for both assets. The public playtest is still signed 0.0.140 without knee gameplay or this art installed.
 
 ## Validated preparation (2026-10-20)
 
