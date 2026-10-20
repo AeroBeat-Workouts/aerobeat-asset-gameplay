@@ -14,6 +14,10 @@ import sys
 import bpy
 from mathutils import Vector
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from knee_mesh_order import canonicalize_all
+from knee_png_metadata import normalize_png
+
 cli = argparse.ArgumentParser()
 cli.add_argument('--output-root', type=Path, required=True)
 args = cli.parse_args(sys.argv[sys.argv.index('--') + 1:])
@@ -142,6 +146,7 @@ sphere('round white light bezel', (0, 0, -.214), (.106, .106, .031), white, 24, 
 sphere('round blue frontal indicator', (0, 0, -.250), (.079, .079, .021), light, 24, 10)
 
 mesh = [ob for ob in bpy.context.scene.objects if ob.type == 'MESH']
+canonicalize_all(mesh)
 tris = 0
 for ob in mesh:
     ob.data.calc_loop_triangles()
@@ -194,6 +199,7 @@ def render(label, xyz, focus=(0, 0, 0), scale=1.14):
     camera.data.ortho_scale = scale
     scene.render.filepath = str(views / (label + '.png'))
     bpy.ops.render.render(write_still=True)
+    normalize_png(views / (label + '.png'))
 
 for name, xyz in [('front', (0, 0, -4)), ('side', (4, 0, 0)),
                   ('back', (0, 0, 4)), ('three-quarter', (2.6, .8, -3.2))]:

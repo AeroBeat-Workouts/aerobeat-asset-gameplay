@@ -14,6 +14,10 @@ import sys
 import bpy
 from mathutils import Vector
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from knee_mesh_order import canonicalize_all
+from knee_png_metadata import normalize_png
+
 cli = argparse.ArgumentParser()
 cli.add_argument('--output-root', required=True, type=Path)
 arguments = cli.parse_args(sys.argv[sys.argv.index('--') + 1:])
@@ -110,6 +114,7 @@ for i in range(48):
 band('bright cyan lip edge', pts, cyan, .012)
 
 mesh = [ob for ob in bpy.context.scene.objects if ob.type == 'MESH']
+canonicalize_all(mesh)
 triangles = 0
 for ob in mesh:
     ob.data.calc_loop_triangles()
@@ -164,6 +169,7 @@ def render(label, xyz, scale=1.1):
     camera.data.ortho_scale = scale
     scene.render.filepath = str(views / (label + '.png'))
     bpy.ops.render.render(write_still=True)
+    normalize_png(views / (label + '.png'))
 
 # Camera deliberately lower for front/three-quarter, so the *underside*
 # impact face is visible rather than hidden by a straight-on top view.
