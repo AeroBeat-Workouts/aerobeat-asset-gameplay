@@ -1,0 +1,76 @@
+{
+  "blender_version": "4.0.2",
+  "coordinates": "+Y up, forward -Z; review camera sees white upper shell from +Z and -Y underside",
+  "files": {
+    "hover-shell-strike-v1.blend": {
+      "bytes": 168004,
+      "sha256": "a4685c9eae36f47a2c5efbebc17995a1da8537308bd6e9ccc5b39eb4b0c952ce"
+    },
+    "hover-shell-strike-v1.glb": {
+      "bytes": 86900,
+      "sha256": "926e1813f420b25d764970f5bc7e15bff017d9b62eeb86200eef4c4d4e0bfead"
+    },
+    "views/approach-32px.png": {
+      "bytes": 371810,
+      "sha256": "822125d1c85971e3a1ee03e4e973642738dbec8dfeb7a5c82c8eeb0b84a0e117"
+    },
+    "views/approach-64px.png": {
+      "bytes": 373650,
+      "sha256": "1138614e69a1780f957c3b210f0cfb5466ed7aeefc66178903108fb935ba5356"
+    },
+    "views/back.png": {
+      "bytes": 446939,
+      "sha256": "bce36f909a199f8e28fb657f6e2e1c06257fa4843c80c89dc04933eb0b59e240"
+    },
+    "views/front.png": {
+      "bytes": 396492,
+      "sha256": "c9dbd01c056e410735edd97128262fd9e94c2516804c1d99adbea0d6863f6a6f"
+    },
+    "views/side.png": {
+      "bytes": 411599,
+      "sha256": "0cd987de9a43edd81419dabaf10d0d3749f77948db398a1696ce29f60def6e34"
+    },
+    "views/three-quarter.png": {
+      "bytes": 408547,
+      "sha256": "406859e480c234a47074ca8448791ce020e6f14c7ced2f98923b642561e93a96"
+    },
+    "views/underside.png": {
+      "bytes": 413189,
+      "sha256": "d72f0692542de52a00c25fde4e904c2956d86a2fdec0075561675b9d815ac91b"
+    }
+  },
+  "geometry": {
+    "measured_aabb": [
+      [
+        -0.311,
+        -0.247,
+        -0.247
+      ],
+      [
+        0.311,
+        0.29,
+        0.106
+      ]
+    ],
+    "triangle_budget": 5000,
+    "triangle_count": 4528
+  },
+  "identity": {
+    "role": "knee-target",
+    "variant": "hover-shell-strike-v1"
+  },
+  "materials": {
+    "names": [
+      "mat/cyan_rim",
+      "mat/shadow_charcoal",
+      "mat/shell_white",
+      "mat/strike_lime"
+    ],
+    "note": "lime strike face fixed contrast; cyan analytic blend, no texture",
+    "runtime_tintable": [],
+    "texture_dependencies": []
+  },
+  "rights": "Original AeroBeat/Gambit Games art, CC BY-NC 4.0",
+  "source": "original local procedural primitives; no copied concept image/text/person",
+  "status": "UNAPPROVED_CANDIDATE"
+}
