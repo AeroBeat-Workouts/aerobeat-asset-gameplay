@@ -12,6 +12,10 @@ from pathlib import Path
 
 import bpy
 from mathutils import Vector
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from knee_mesh_order import canonicalize_all
+from knee_png_metadata import normalize_png
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--output-root', type=Path, required=True)
@@ -207,6 +211,7 @@ def write_candidate(builder, label):
     base = root / role / variant
     base.mkdir(parents=True, exist_ok=True)
     meshes = [ob for ob in bpy.context.scene.objects if ob.type == 'MESH']
+    canonicalize_all(meshes)
     # loop_triangles are lazy until calc_loop_triangles is invoked.
     triangles = 0
     for ob in meshes:
@@ -229,6 +234,7 @@ def write_candidate(builder, label):
         camera.rotation_euler = (Vector((0, 0, 0)) - camera.location).to_track_quat('-Z', 'Y').to_euler()
         bpy.context.scene.render.filepath = str(base / 'views' / (name + '.png'))
         bpy.ops.render.render(write_still=True)
+        normalize_png(base / 'views' / (name + '.png'))
     if role == 'knee-target':
         camera.location = (0, 0, -4)
         camera.rotation_euler = (Vector((0, 0, 0)) - camera.location).to_track_quat('-Z', 'Y').to_euler()
@@ -236,6 +242,7 @@ def write_candidate(builder, label):
             camera.data.ortho_scale = .72 * 640 / px
             bpy.context.scene.render.filepath = str(base / 'views' / f'approach-{px}px.png')
             bpy.ops.render.render(write_still=True)
+            normalize_png(base / 'views' / f'approach-{px}px.png')
     # Extents from evaluated mesh data, excluding presentation camera and lights.
     xyz = [ob.matrix_world @ Vector(corner) for ob in meshes for corner in ob.bound_box]
     bounds = [[round(min(p[i] for p in xyz), 5) for i in range(3)],
