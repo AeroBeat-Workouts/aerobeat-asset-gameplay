@@ -1,0 +1,116 @@
+{
+  "blender_version": "4.0.2",
+  "coordinates": "+Y up, local forward -Z, pad front faces incoming -Z",
+  "files": {
+    "segmented-lightwrap-v1.blend": {
+      "bytes": 157746,
+      "sha256": "d9f79cba83c82c1cd27d5f4e5577e32f324740327ac6fcc1ee2657f8471ca651"
+    },
+    "segmented-lightwrap-v1.glb": {
+      "bytes": 129520,
+      "sha256": "9c68a860a50ee7c381ba7a8a357e2ce623eb92c78c9f70b65a2138762a50314a"
+    },
+    "views/back.png": {
+      "bytes": 500438,
+      "sha256": "47317dcb8885dad4dbc94ba508ffaf75fbc4eb31187a29e129db169ab590d57d"
+    },
+    "views/front.png": {
+      "bytes": 519706,
+      "sha256": "74f928cb78eacfe0eebdd0133e750620500cb7eb91d2aa192b53d588869e6d51"
+    },
+    "views/lowered-pair-a-back.png": {
+      "bytes": 475345,
+      "sha256": "b5814f80acf883cc6ee189437de2c059e0a0871a9e1a81246e68c166467db1f8"
+    },
+    "views/lowered-pair-a-front.png": {
+      "bytes": 535810,
+      "sha256": "f5c237603f427e70509b2b96cefff5fa7bad311e0768a2e1039e719d149e2148"
+    },
+    "views/lowered-pair-a-side.png": {
+      "bytes": 478572,
+      "sha256": "a4df16ef6282a7068bf463792bb270caf066832b12781961d319d909337576d3"
+    },
+    "views/lowered-pair-b-back.png": {
+      "bytes": 474603,
+      "sha256": "7e947eaf9671bcc27c2c57f1f9d25f51aa8b2a098e8b8ac6fb4caf3f22152e58"
+    },
+    "views/lowered-pair-b-front.png": {
+      "bytes": 536727,
+      "sha256": "9ce6049dfd551b81b59cc669e886dfb2d1295cd838d87205a5a264c5b10bb09b"
+    },
+    "views/lowered-pair-b-side.png": {
+      "bytes": 477639,
+      "sha256": "1d9248b62876f743101ea33bffd4c2b0bf89757685d06bbfee2bcd6ad5fa29af"
+    },
+    "views/raised-pair-a-back.png": {
+      "bytes": 477728,
+      "sha256": "ce56e9d3480efbf2d3c1e513b4ec207405f5863b0c4353bfcc96c57e8c77221a"
+    },
+    "views/raised-pair-a-front.png": {
+      "bytes": 501539,
+      "sha256": "aa2723f684a12ed24bae2389bc83bb1ac4938d2d35e7923bfb7371b4553e0d01"
+    },
+    "views/raised-pair-a-side.png": {
+      "bytes": 471911,
+      "sha256": "364b30523b6d9412cf2a578a4008067bd80a56ab43c780565477a91ee1b1291d"
+    },
+    "views/raised-pair-b-back.png": {
+      "bytes": 476842,
+      "sha256": "b64f4bfebc069474ccbb3002d9fba0fbc7c2b2892829118e54bbe0352673edf5"
+    },
+    "views/raised-pair-b-front.png": {
+      "bytes": 502268,
+      "sha256": "4d8c08a745f7158795d495cf7d2e1e7656f5e67866ec07c29fcc07a929a04931"
+    },
+    "views/raised-pair-b-side.png": {
+      "bytes": 471035,
+      "sha256": "e2615f8dab9779adb87be2506528eb37a5843756e310c007000ef90ee67c666a"
+    },
+    "views/side.png": {
+      "bytes": 433174,
+      "sha256": "be9fd63406e0d357e32733bc275386ede71df3ab24021e6d6c42cda5ab710d50"
+    },
+    "views/three-quarter.png": {
+      "bytes": 506977,
+      "sha256": "76378f138c807fdf220d41e78c46df7a81a27d4b8dc05d53ab3192cda2eb2679"
+    }
+  },
+  "geometry": {
+    "measured_aabb": [
+      [
+        -0.269,
+        -0.313,
+        -0.271
+      ],
+      [
+        0.269,
+        0.313,
+        0.1775
+      ]
+    ],
+    "triangle_budget": 7000,
+    "triangle_count": 5440
+  },
+  "identity": {
+    "role": "knee-pad",
+    "variant": "segmented-lightwrap-v1"
+  },
+  "materials": {
+    "external_dependencies": [],
+    "names": [
+      "mat/front_blue_light",
+      "mat/glove_match_tint",
+      "mat/padded_gray",
+      "mat/shell_white",
+      "mat/strap_gray"
+    ],
+    "runtime_tintable": [
+      "mat/glove_match_tint"
+    ],
+    "textures": []
+  },
+  "reuse": "one equipment mesh intended for left/right knee instances; song glove colors per instance",
+  "reviews": "paired lowered/raised leg cylinders are illustrative review-only, excluded from GLB and blend",
+  "rights": "Original procedural AeroBeat/Gambit Games work; CC BY-NC 4.0",
+  "status": "UNAPPROVED_CANDIDATE"
+}
