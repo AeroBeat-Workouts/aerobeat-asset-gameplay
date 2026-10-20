@@ -1,0 +1,67 @@
+{
+  "blender_version": "4.0.2",
+  "bounds": [
+    [
+      -0.307,
+      -0.24,
+      -0.129
+    ],
+    [
+      0.307,
+      0.323,
+      0.044
+    ]
+  ],
+  "coordinate_contract": "+Y up, local forward -Z, front faces -Z",
+  "external_dependencies": [],
+  "files": {
+    "open-prong-v1.blend": {
+      "bytes": 132056,
+      "sha256": "ecdb3eee586c27872094eb0d45953896b461ff459075ea6e28b90fcdb2aed668"
+    },
+    "open-prong-v1.glb": {
+      "bytes": 63708,
+      "sha256": "6906093aee4cbc426ebefc835b6ccbfbe6cee28d8bc82eea19a68c8d4c6d842d"
+    },
+    "views/approach-32px.png": {
+      "bytes": 395645,
+      "sha256": "1608a865d1dbf522feb16e610c39f1e6aeda0093f44ec341048e1a7783bd5d1f"
+    },
+    "views/approach-64px.png": {
+      "bytes": 398031,
+      "sha256": "70870137fd207efdc6238cdf01db0571173e96bfe672854a5cab3b911c4b8fa5"
+    },
+    "views/back.png": {
+      "bytes": 429671,
+      "sha256": "85d54513c52317a6ac85598725ec7e28bad4446740e789e16092faadf6cb036d"
+    },
+    "views/front.png": {
+      "bytes": 457048,
+      "sha256": "b0dea57208f034ff88eab3c905c478efb19b6538b36a55983e6cd602fcca1497"
+    },
+    "views/side.png": {
+      "bytes": 415040,
+      "sha256": "e81bb426e4418c8d57608071914f3b0500cea28caceb9268996799ad59e9af23"
+    },
+    "views/three-quarter.png": {
+      "bytes": 451749,
+      "sha256": "22dcf1d16e3298b9295d3bccb5fe01227657d82e57f713c1154d64d2efc3235a"
+    }
+  },
+  "left_right": "one pad geometry instanced twice; tint per instance to glove colors",
+  "materials": [
+    "mat/charcoal",
+    "mat/target_tint",
+    "mat/white"
+  ],
+  "rights": "Original procedural AeroBeat/Gambit Games artwork; CC BY-NC 4.0",
+  "role": "knee-target",
+  "runtime_tintable": [
+    "mat/target_tint"
+  ],
+  "source_object_rotation_scale": "identity",
+  "status": "UNAPPROVED_CANDIDATE",
+  "textures": [],
+  "triangles": 3088,
+  "variant": "open-prong-v1"
+}

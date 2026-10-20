@@ -1,0 +1,60 @@
+{
+  "blender_version": "4.0.2",
+  "bounds": [
+    [
+      -0.275,
+      -0.319,
+      -0.259
+    ],
+    [
+      0.275,
+      0.314,
+      0.146
+    ]
+  ],
+  "coordinate_contract": "+Y up, local forward -Z, front faces -Z",
+  "external_dependencies": [],
+  "files": {
+    "dome-strap-v1.blend": {
+      "bytes": 160146,
+      "sha256": "c91ef5a5aeea5efe25dfceb23fb998d11f7f2807f9a199608f4d8f7d699afb02"
+    },
+    "dome-strap-v1.glb": {
+      "bytes": 92224,
+      "sha256": "814e587687071e341ff512bc38ab21aad11b8641417a04e4ffc29f56b1a07328"
+    },
+    "views/back.png": {
+      "bytes": 503091,
+      "sha256": "efed2da706f625b4315d137034be0665593d62cec97ff5c54c24d53e471ce452"
+    },
+    "views/front.png": {
+      "bytes": 502546,
+      "sha256": "f20de8c29ef17ad78c3c3d0412e501f3229c20131d4028c5fc2b5be6cb447be2"
+    },
+    "views/side.png": {
+      "bytes": 456798,
+      "sha256": "96688f478b0969d517bd55e44bc8ec3a50b31db6e9c1bc6a4b29ddf1cf3f93c4"
+    },
+    "views/three-quarter.png": {
+      "bytes": 504317,
+      "sha256": "8793223575031f337b9ebc5ba80c8122b453d523a0985564adfd525a99612290"
+    }
+  },
+  "left_right": "one pad geometry instanced twice; tint per instance to glove colors",
+  "materials": [
+    "mat/charcoal",
+    "mat/knee_tint",
+    "mat/padding",
+    "mat/white"
+  ],
+  "rights": "Original procedural AeroBeat/Gambit Games artwork; CC BY-NC 4.0",
+  "role": "knee-pad",
+  "runtime_tintable": [
+    "mat/knee_tint"
+  ],
+  "source_object_rotation_scale": "identity",
+  "status": "UNAPPROVED_CANDIDATE",
+  "textures": [],
+  "triangles": 4408,
+  "variant": "dome-strap-v1"
+}
