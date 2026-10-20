@@ -1,0 +1,67 @@
+{
+  "blender_version": "4.0.2",
+  "bounds": [
+    [
+      -0.284,
+      -0.27785,
+      -0.2395
+    ],
+    [
+      0.284,
+      0.31185,
+      0.182
+    ]
+  ],
+  "coordinate_contract": "+Y up, local forward -Z, outer shell faces -Z",
+  "external_dependencies": [],
+  "files": {
+    "turtle-shell-strap-v1.blend": {
+      "bytes": 147482,
+      "sha256": "45c36fba08ba164dc81ae1957f2670fa9e25a4fdf017d27ab07e53816be17572"
+    },
+    "turtle-shell-strap-v1.glb": {
+      "bytes": 84584,
+      "sha256": "ed92a95381484357435856b7a0d403c3207f4c7927c43daad8f7b5ac4656dcca"
+    },
+    "views/approach-32px.png": {
+      "bytes": 395765,
+      "sha256": "a2c1692c4b087dc775ad7b2269c19a6b0748501410ef8b79776702dfea92c28a"
+    },
+    "views/approach-64px.png": {
+      "bytes": 398166,
+      "sha256": "bb4ff5b17a76417b3e755068f13db42fb8d8558eee325b9393024b185f138549"
+    },
+    "views/back.png": {
+      "bytes": 463910,
+      "sha256": "13ab41150af4e2c17e8d9ce72331cca1271b8ffd6c8682107a21a015eade9c13"
+    },
+    "views/front.png": {
+      "bytes": 458442,
+      "sha256": "19a3f30543844b8cc0c666771e5b3167699c8abf56def7a5ab48cb81fa5de785"
+    },
+    "views/side.png": {
+      "bytes": 435584,
+      "sha256": "15f5b4dcc6c9d41bf45e75966d7100bf4c419554e1957b4d115327b1a80c7bc6"
+    },
+    "views/three-quarter.png": {
+      "bytes": 481916,
+      "sha256": "099fe2c18b5c4d55ef03d3e107bdb03a7c503bd06264982fe5f2d193ae81f131"
+    }
+  },
+  "materials": [
+    "mat/charcoal",
+    "mat/target_tint",
+    "mat/white"
+  ],
+  "meaning": "one kneecap shield and a front-to-back wraparound strap around an invisible leg",
+  "rights": "Original procedural AeroBeat/Gambit Games artwork; CC BY-NC 4.0",
+  "role": "knee-target",
+  "runtime_tintable": [
+    "mat/target_tint"
+  ],
+  "source_object_rotation_scale": "identity",
+  "status": "UNAPPROVED_CANDIDATE",
+  "textures": [],
+  "triangles": 2932,
+  "variant": "turtle-shell-strap-v1"
+}
