@@ -121,6 +121,10 @@ def main():
     args = parser.parse_args()
     authority = Path(args.authority_root).resolve(); candidate = Path(args.candidate_root).resolve()
     raw = candidate / f"release/raw/{RELEASE}"; review = candidate / f"review/{RELEASE}"
+    predecessors = {"release/raw/0.0.11": (17, "c4d44f91ed4c77e03911c0a6e9000b8cbe036fad523321e9f081146bdaee55ad", "af911e693622e5f21aa1f2c6f3321fb6541ed312"), "review/0.0.11": (88, "83decde469e37591af86b52f0bd5dc28c4dfe1469d466ca30c1aa40af5dc97a6", "cf09325cfe25709ea818694f6b3224f3eadea1cd")}
+    for relative, (files, expected_digest, expected_tree) in predecessors.items():
+        check(digest(authority / relative)[::2] == (files, expected_digest), f"immutable predecessor content {relative}")
+        check(subprocess.check_output(["git", "rev-parse", f"HEAD:{relative}"], cwd=authority, text=True).strip() == expected_tree, f"immutable predecessor Git tree {relative}")
     check(raw.is_dir() and review.is_dir(), "release and review trees required")
     check(candidate == authority if args.canonical else not raw.is_relative_to(authority / "release/raw"), "canonical/candidate separation")
     expected_raw = {"inventory.v1.json", "proof.v1.json", "sets/default-v1.json"}

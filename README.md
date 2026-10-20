@@ -18,7 +18,8 @@ Canonical, cross-engine gameplay art for AeroBeat. This repository owns editable
 - `release/raw/0.0.9/` — immutable uniform-arrow repair successor: the directional arrow uses one analytic signed-offset family; the other six GLBs remain byte-identical to `0.0.8`.
 - `release/raw/0.0.10/` — immutable uniform-wall successor: only `wall/red-glass-v1` changes from `0.0.9`, removing the separate high-opacity edge cage.
 - `release/raw/0.0.11/` — immutable tint-dominant marker successor: only `athlete-marker/sphere-v1` re-authors; the other six GLBs are byte-identical to `0.0.10`.
-- `review/<version>/` — Blender-rendered visual evidence, calculated containment/contrast/wall-grid metadata, and hashes outside runtime releases; `review/0.0.1/` through `review/0.0.10/` are immutable after finalization.
+- `release/raw/0.0.12/` — immutable four-column continuous-track successor: only `track/blue-glass-v1` re-authors; the other six GLBs are byte-identical to `0.0.11`.
+- `review/<version>/` — Blender-rendered visual evidence, calculated containment/contrast/wall-grid metadata, and hashes outside runtime releases; `review/0.0.1/` through `review/0.0.12/` are immutable after finalization.
 - `tools/` — locally authored Blender/Python generation, export, review, and strict validation scripts.
 
 After a release validates, do not mutate it. Corrections require a new release version.
@@ -28,9 +29,12 @@ After a release validates, do not mutate it. Corrections require a new release v
 Requires Blender `4.0.2` and Python 3.
 
 ```bash
-# Immutable predecessor remains independently valid.
-python3 tools/validate.py --root . --release 0.0.7
+# Validate finalized 0.0.12 track and clean Blender source/GLB imports.
+python3 tools/validate_track_candidate.py --authority-root . --candidate-root . --source-commit 5e3b7e86bb85ee1ebec097eb3d36a0f8a60b9d83 --source-tree 75d6adf5ca7f7a7f590ed1bc876ac00ea5292a6c --canonical --smoke
 python3 tools/test_subprocess_contract.py --root .
+
+# Historical validate.py --release 0.0.7 is pinned to old mutable wall/source
+# bytes; after the 0.0.10 wall update it cannot validate current mutable main.
 
 # Prepared 0.0.9 candidate validation; CANDIDATE is an isolated disposable root.
 python3 tools/validate_rounded_candidate.py --authority-root . --candidate-root "$CANDIDATE" --canonical --smoke
@@ -85,6 +89,12 @@ Independent QA and source audit authorized exactly one invocation from generatio
 Deviation note: the spec asked for an equatorial "white inner + charcoal outer" keyline of roughly 10–15% with ≥80% front tint. On the 12-segment grid (and denser variants) no equatorial band can satisfy all four hard gates simultaneously — any white strip crossing the horizontal centerline captures the center pixel, and a band thin enough to stay ≤15% drops below 80% front tint or loses white visibility from below. The polar keyline is the minimal structure that keeps the center tint-dominant at every camera angle while retaining both structural materials from all six cardinal directions; keyline surface is 3.3% (thin). Vertex/triangle counts (566/1,128 vs ~86/168) rise accordingly because the keyline must be thin relative to a 0.18-unit sphere.
 
 Generation authority `7bd1e3eb37f62b84f3f8438696231ed0c7907ba1` / tree `7303f49ea189f133530525ae5f6b687f09b2591c` authorized exactly one invocation of `tools/build_marker_release.py`; the authorization is consumed. Canonical raw is 17 files / 513,415 bytes / tree digest `c4d44f91ed4c77e03911c0a6e9000b8cbe036fad523321e9f081146bdaee55ad`, with inventory `e65571211e7a5a44224c378dbb654afd56263dc37f427a9b3f0af6453a6f1d23`, proof `0c194b1a8f290cfe387ee34154199cc0758ace8baf9b60fa4a3beb5bdddf4227`, and marker GLB 90,520 bytes / SHA-256 `f376934f218a25c11f2f31928c67684611aaf9c73aa1724548682ae280b5cbcc` (material triangle partition `mat/charcoal:120`, `mat/white:48`, `mat/tint_base:960`). Canonical review is 88 files / 94,500,403 bytes / tree digest `83decde469e37591af86b52f0bd5dc28c4dfe1469d466ca30c1aa40af5dc97a6` with hashes manifest `b8f0fda36dc210e78ccdf09d90baa3293704975af2f756afe9405f99afa4e0d9`. Two independent disposable builds reproduced the raw and review trees byte-for-byte and the marker source semantic fingerprint identically (`tools/reproducibility_marker.py`). Both trees are finalized read-only at directory/file modes `0555` / `0444`; correction requires a new version. A deterministic PlayCanvas pixel harness (fixed cursors, dark clear color `#090E17`) confirms at both sizes: nose center `(255,251,17)`, left-wrist `(48,190,255)`, right-wrist `(73,255,143)` — role-color-dominant, not white, not background; tint patch ≥ 80% of projected front area; and all three material records report opacity 1, `BLEND_NONE`, `CULLFACE_BACK`, `depthWrite true`.
+
+### Finalized four-column continuous-track successor
+
+`0.0.12` re-authors only `track/blue-glass-v1`. The glass is one continuous 4.2 × 0.06 × 72 world-unit box with authored depth Z `−36..+36` and unchanged top-surface pivot; its five full-depth cyan rails are centered precisely at X `−2, −1, 0, 1, 2`, defining four canonical beat columns. The same analytic blue-glass alpha (`0.52`), cyan material, culling, and depth-write behavior are retained. The mesh has 72 triangles (12 glass, 60 rails) within the existing 160-triangle budget; no translucent segment joins are authored. The renderer owns its near-edge frame-extension shift. No runtime code is included here.
+
+All six other GLBs and their release manifests are byte-identical to immutable `0.0.11`. The track GLB is 2,652 bytes / SHA-256 `93e8dc45f7f6be58aa90ddc7a2def16b54b830ad6882b881fe72dc558f42dfba` at `release/raw/0.0.12/track/blue-glass-v1.glb`; its mutable source manifest is `manifests/track/blue-glass-v1.v1.json`. Source authority is generator commit `5e3b7e86bb85ee1ebec097eb3d36a0f8a60b9d83` / tree `75d6adf5ca7f7a7f590ed1bc876ac00ea5292a6c`. `tools/reproducibility_track.py` generated two isolated candidates whose entire raw trees (17 files / digest `12e9ed944855882775bd624dceb229468fb4abf0d5e18c5366710b35bcb78ff2`) and review trees (88 files / digest `29483ff2bd2ac9844e3a424f02a0967e733186ba0befd3b981ac3717867e7cb9`) matched byte-for-byte. The canonical editable source matched both isolated scene semantic fingerprints (`fdeadfccdc3561e34d5f76f484ca705368ae8e6cc2cc9410cf77114ab70cf76a`); `tools/validate_track_candidate.py --canonical --smoke` passes Blender 4.0.2 source/GLB smoke, geometry/material/manifests/review hashes, and exact immutable `0.0.11` release/review Git trees. Both `0.0.12` trees are finalized read-only; corrections require another version.
 
 The finalized `0.0.5` raw release contains exactly 17 files / 45,819 bytes with tree digest `24f6bb3b86657716ed03958a32dee5c9db3904aa980cb0a839aacac0590cc860`, inventory SHA-256 `4984cca24b8121bc6657153304726f1f7ef05d878ca5220f3c3e2b6f2457a102`, and proof SHA-256 `4aac2274a9803a05e9ff533c02958cf1c5def66e0af1bf2fae3cc4479319f350`. Its wall GLB is 3,692 bytes with SHA-256 `1227bfbb7d5379b33f1468c1a0d7fffad07c9390654b54033f079ba602a84a37`. Review `0.0.5` contains 13 RGB `1600 × 900` PNGs plus five JSON evidence files.
 
